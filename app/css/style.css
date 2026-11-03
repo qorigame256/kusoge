@@ -87,26 +87,28 @@ button {
   color: var(--muted);
 }
 
-/* 5本並べても画面に収まる高さ（2026-11-03 に Windows の Chrome で画面の大きさを5通り変えて実測: カード1枚 114〜117、
-   すき間 12 → 228 から 846〜860 まで。6本目を足すと 972〜989 になり 960 をはみ出す。画面はスクロールしないので、
-   6本目のときは並べ方を考え直す） */
+/* 2列に並べる（2026-11-04 本人決定。説明文はレベル選択の画面に出す）。画面はスクロールしない。
+   2026-11-04 に Windows の Chrome で画面の大きさを5通り変えて実測: 札1枚 163 前後、すき間 12 → 6本（3段）で 228 から 735〜741 まで、
+   仮の札を足した8本（4段）で 907〜916 まで。9本目を足すと5段目が 960 をはみ出す（計算）ので、そのときは並べ方を考え直す。
+   iPhone の文字では測っていない */
 .game-list {
   position: absolute;
   top: calc(228 * var(--u));
   left: calc(32 * var(--u));
   right: calc(32 * var(--u));
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: calc(12 * var(--u));
 }
 
 .game-card {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: calc(16 * var(--u));
+  gap: calc(6 * var(--u));
   width: 100%;
-  padding: calc(12 * var(--u));
-  text-align: left;
+  padding: calc(10 * var(--u)) calc(8 * var(--u));
+  text-align: center;
   border: calc(2 * var(--u)) solid var(--panel-line);
   border-radius: calc(18 * var(--u));
   background: var(--panel);
@@ -132,23 +134,18 @@ button {
 
 .card-text {
   min-width: 0;
+  width: 100%;
 }
 
 .card-title {
   margin: 0;
-  font-size: calc(26 * var(--u));
+  font-size: calc(20 * var(--u));
+  line-height: 1.25;
   font-weight: 800;
 }
 
-.card-desc {
-  margin: calc(6 * var(--u)) 0 0;
-  font-size: calc(15 * var(--u));
-  line-height: 1.45;
-  color: var(--muted);
-}
-
 .card-progress {
-  margin: calc(6 * var(--u)) 0 0;
+  margin: calc(4 * var(--u)) 0 0;
   font-size: calc(15 * var(--u));
   font-weight: 700;
   color: var(--accent);
@@ -206,9 +203,22 @@ button {
 
 /* ---- レベル選択 ---- */
 
+/* ゲームの説明（一覧の札には出さず、ここに出す）。1行に収まる長さにする */
+.levels-desc {
+  position: absolute;
+  top: calc(96 * var(--u));
+  left: calc(32 * var(--u));
+  right: calc(32 * var(--u));
+  margin: 0;
+  text-align: center;
+  font-size: calc(17 * var(--u));
+  line-height: 1.4;
+  color: var(--muted);
+}
+
 .level-list {
   position: absolute;
-  top: calc(120 * var(--u));
+  top: calc(140 * var(--u));
   left: calc(32 * var(--u));
   right: calc(32 * var(--u));
   display: flex;
@@ -216,7 +226,7 @@ button {
   gap: calc(10 * var(--u));
 }
 
-/* 10個並べても画面に収まる高さ（1個 64、すき間 10 → 120 から 850 まで） */
+/* 10個並べても画面に収まる高さ（2026-11-04 に画面の大きさを5通り変えて実測: 1個 62〜63、すき間 10 → 140 から 853〜859 まで） */
 .level-btn {
   display: flex;
   align-items: center;

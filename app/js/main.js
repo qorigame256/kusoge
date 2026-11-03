@@ -14,7 +14,7 @@
   const ctx = canvas.getContext('2d');
 
   // まだ作っていないゲームの枠。同じ id のゲームが登録されたら出さない。
-  // 書き方の例: { id: 'xxx', title: '一覧に出す題名', desc: '一覧に出す説明' }
+  // 書き方の例: { id: 'xxx', title: '一覧に出す題名' }
   const UPCOMING = [];
 
   const save = KG.loadSave();
@@ -89,13 +89,12 @@
       const icon = document.createElement('canvas');
       icon.className = 'icon';
       card.appendChild(icon);
+      // 一覧は2列の札なので、説明（game.desc）はレベル選択の画面に出す
       const text = document.createElement('div');
       text.className = 'card-text';
       const done = clearedOf(game).filter((i) => i < game.levels.length).length;
-      text.innerHTML =
-        '<h3 class="card-title"></h3><p class="card-desc"></p><p class="card-progress"></p>';
+      text.innerHTML = '<h3 class="card-title"></h3><p class="card-progress"></p>';
       text.querySelector('.card-title').textContent = game.title;
-      text.querySelector('.card-desc').textContent = game.desc;
       text.querySelector('.card-progress').textContent = 'クリア ' + done + ' / ' + game.levels.length;
       card.appendChild(text);
       card.addEventListener('click', () => {
@@ -109,10 +108,8 @@
       if (KG.games.some((g) => g.id === up.id)) continue;
       const card = document.createElement('div');
       card.className = 'game-card soon';
-      card.innerHTML =
-        '<div class="icon soon">?</div><div class="card-text"><h3 class="card-title"></h3><p class="card-desc"></p><p class="card-progress">準備中</p></div>';
+      card.innerHTML = '<div class="icon soon">?</div><div class="card-text"><h3 class="card-title"></h3><p class="card-progress">準備中</p></div>';
       card.querySelector('.card-title').textContent = up.title;
-      card.querySelector('.card-desc').textContent = up.desc;
       list.appendChild(card);
     }
     $('btn-sound').textContent = KG.sound.isMuted() ? '音 OFF' : '音 ON';
@@ -131,6 +128,7 @@
     selectedGame = game;
     showScreen('levels');
     $('levels-title').textContent = game.title;
+    $('levels-desc').textContent = game.desc;
     const list = $('level-list');
     list.textContent = '';
     const cleared = clearedOf(game);
