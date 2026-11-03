@@ -40,7 +40,24 @@ const CASES = [
   [4, ['1-1', '1-2', '2-1', '1-3', '2-2', '3-2', '3-3', '4-2', '4-1', '5-1'], 'clear'],
   [4, ['1-1', '1-2', '2-1', '1-3', '2-2', '3-2', '3-3', '4-1', '4-2', '5-1'], 'fail:lose'], // 4階の ×2 を先に取る
   [4, ['1-1', '1-2', '1-3'], 'fail:even'],
+  [5, ['1-1', '1-2', '1-3', '2-1', '3-2', '3-3', '2-2', '4-1'], 'clear'],
+  [5, ['1-1', '2-2'], 'refused'], // 鍵を持たずに錠前の部屋へ
+  [5, ['1-1', '1-2', '2-2', '1-3', '2-1', '3-2', '3-3', '4-1'], 'fail:lose'], // 鍵ですぐ ×2 を開けると、てっぺんで足りない
+  [6, ['1-1', '1-2', '2-2', '3-1', '3-2', '4-1'], 'clear'],
+  [6, ['1-1', '1-2', '2-1', '2-2', '3-1', '3-2'], 'fail:stuck'], // 鍵を +40 に使うと、てっぺんの扉を開けられない
+  [6, ['1-1', '1-2', '2-2', '3-2', '3-1', '4-1'], 'fail:lose'],
+  [7, ['1-1', '1-3', '2-1', '2-3', '3-1', '3-3', '1-2', '3-2', '4-1'], 'clear'],
+  [7, ['1-2', '2-1', '2-3', '3-1', '3-3', '1-1', '1-3', '3-2', '4-1'], 'fail:lose'], // 錠前の無い ×2 を最初に取ると 3 足りない
+  [7, ['1-1', '1-3', '2-2', '3-2'], 'refused'], // 鍵は1本。+15 に使うと ×3 は開かない
+  [8, ['1-1', '1-2', '1-3', '2-2', '3-1', '3-2', '2-3', '4-1', '3-3', '5-1'], 'clear'], // 鍵を取っておき、罠を通って登る
+  [8, ['1-1', '1-2', '1-3', '2-1', '2-3', '3-2', '4-1', '3-1', '5-1'], 'fail:lose'], // 鍵を目先の +20 に使う
+  [8, ['1-1', '1-2', '2-2', '3-1'], 'fail:even'], // 薬を飲まずに罠を通ると 12。12 の敵と同じ
+  [9, ['1-1', '1-2', '1-3', '2-3', '3-1', '3-2', '3-3', '4-2', '4-1', '5-1'], 'clear'],
+  [9, ['1-1', '1-2', '1-3', '2-1', '2-3', '3-1', '3-2', '3-3', '4-2', '4-1', '2-2'], 'fail:stuck'], // 鍵2本を +25 と ×3 に使う
+  [9, ['1-3', '1-1', '1-2', '2-3'], 'fail:lose'], // ×2 を先に取ると 21。22 の敵に届かない
 ];
+const HINT_MAX = 20; // 上の帯のヒントの字数の上限（tower-levels.js の冒頭の注記）
+const GREEDY_MUST_FAIL_FROM = 6; // 0始まりの番号。7面から先は、素直な進め方では勝てないこと
 
 function roomOf(sim, name) {
   const [f, c] = name.split('-').map(Number);
@@ -97,7 +114,7 @@ function countAll(level) {
       }
       return { wins: sim.state === 'clear' ? 1 : 0, total: 1 };
     }
-    const key = sim.rooms.map((r) => (r.done ? 1 : 0)).join('') + '/' + sim.maxFloor + '/' + sim.power;
+    const key = sim.rooms.map((r) => (r.done ? 1 : 0)).join('') + '/' + sim.maxFloor + '/' + sim.power + '/' + sim.keys;
     if (memo.has(key)) return memo.get(key);
     let wins = 0;
     let total = 0;
@@ -116,6 +133,35 @@ function countAll(level) {
   res.bestText = bestSeq ? bestSeq.map((id) => nameOf(sim.rooms[id])).join(' → ') + ' 強さ ' + best : 'なし';
   res.tooLong = tooLong;
   return res;
+}
+
+// 素直な進め方: 入れる部屋のうち、入ったあとの強さがいちばん大きい部屋へ入り続ける（同じなら下の階・左の部屋。鍵は強さが変わらない部屋として比べる）。
+// 勝てる部屋も罠も無ければ、最初の入れる部屋に入って終わる
+function gainOf(sim, r) {
+  if (r.kind === 'enemy' || r.kind === 'boss') return sim.power > r.v ? sim.power + r.v : -Infinity;
+  if (r.kind === 'item') return r.op === '+' ? sim.power + r.v : sim.power * r.v;
+  if (r.kind === 'trap') return sim.power - r.v > 0 ? sim.power - r.v : -Infinity;
+  return sim.power;
+}
+function greedy(level) {
+  const sim = createSim(level, { instant: true });
+  const seq = [];
+  for (let i = 0; i < 100 && sim.state === 'play'; i++) {
+    let best = null;
+    let bestP = -Infinity;
+    for (const r of sim.rooms) {
+      if (r.done || !sim.canEnter(r)) continue;
+      const p = gainOf(sim, r);
+      if (best === null || p > bestP) {
+        best = r;
+        bestP = p;
+      }
+    }
+    if (!best) break;
+    seq.push(nameOf(best));
+    sim.tap(best.id);
+  }
+  return { result: sim.state === 'fail' ? 'fail:' + sim.reason : sim.state, power: sim.power, seq };
 }
 
 let bad = 0;
@@ -145,6 +191,22 @@ for (let lv = 0; lv < KG.towerLevels.length; lv++) {
       (c.tooLong ? ' 部屋の数より多く入れた順番が ' + c.tooLong + ' 通り' : '')
   );
   if (showAll) console.log('     最も強くクリアする順番: ' + c.bestText);
+  const level = KG.towerLevels[lv];
+  const hintLen = [...(level.hint || '')].length;
+  if (!hintLen || hintLen > HINT_MAX) {
+    bad++;
+    console.log('★NG レベル' + (lv + 1) + ' ヒントの字数 ' + hintLen + '（1〜' + HINT_MAX + ' 字）: ' + level.hint);
+  }
+  let g;
+  try {
+    g = greedy(level);
+  } catch (e) {
+    g = { result: 'error: ' + e.message, power: NaN, seq: [] };
+  }
+  const must = lv >= GREEDY_MUST_FAIL_FROM;
+  const gok = !g.result.startsWith('error') && (!must || g.result !== 'clear');
+  if (!gok) bad++;
+  console.log((gok ? 'OK ' : '★NG') + ' レベル' + (lv + 1) + ' 素直な進め方 → ' + g.result + ' 強さ ' + g.power + (must ? '（勝てないこと）' : '') + (showAll ? '  ' + g.seq.join(' ') : ''));
 }
 
 // 決まりごと。小さな塔で1つずつ確かめる
@@ -161,6 +223,15 @@ const RULES = [
   ['下の階へ戻って戦える', 5, [['E1', 'E8'], ['E3'], ['B15']], ['1-1', '2-1', '1-2', '3-1'], 'clear', 32],
   ['空いた部屋へ移っても強さは変わらない', 5, [['E1', 'E2'], ['B10']], ['1-1', '1-2', '1-1'], 'play', 8],
   ['いまいる部屋は選べない', 5, [['E1'], ['B3']], ['1-1', '1-1'], 'refused', 6],
+  ['鍵で錠前の部屋に入れる', 5, [['K', 'L+4'], ['B8']], ['1-1', '1-2', '2-1'], 'clear', 17],
+  ['鍵が無いと錠前の部屋に入れない', 5, [['L+4', 'E1'], ['B3']], ['1-1'], 'refused', 5],
+  ['鍵は1回使うと無くなる', 5, [['K', 'L+4', 'L+6'], ['B30']], ['1-1', '1-2', '1-3'], 'refused', 9],
+  ['鍵は2本まとめて持てる', 5, [['K', 'K', 'L+4'], ['L+6'], ['B10']], ['1-1', '1-2', '1-3', '2-1', '3-1'], 'clear', 25],
+  ['錠前の敵は、開けてから戦う', 5, [['K', 'LE3'], ['B7']], ['1-1', '1-2', '2-1'], 'clear', 15],
+  ['てっぺんの敵も錠前つきにできる', 5, [['K', 'E1'], ['LB4']], ['1-1', '2-1'], 'clear', 9],
+  ['開けた部屋は、空いたあと鍵なしで通れる', 5, [['K', 'L+4', 'E1'], ['B9']], ['1-1', '1-2', '1-3', '1-2', '2-1'], 'clear', 19],
+  ['空いた鍵の部屋へ戻っても鍵は増えない', 5, [['K', 'E1'], ['L+4', 'L+6'], ['B30']], ['1-1', '1-2', '1-1', '2-1', '2-2'], 'refused', 10],
+  ['鍵が足りず入れる部屋が無くなったら失敗', 5, [['K', 'L+4'], ['LB3']], ['1-1', '1-2'], 'fail:stuck', 9],
 ];
 for (const [label, start, floors, names, expect, power] of RULES) {
   const r = run({ start, floors }, names);

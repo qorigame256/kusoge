@@ -23,6 +23,7 @@
     lose: '自分より強い敵に挑んでしまった',
     even: '同じ強さの敵には勝てない',
     zero: '罠で強さが0になった',
+    stuck: '鍵が足りず、もう進めない',
   };
 
   // 人（勇者も敵も同じ形）。(x, y) は足もと。face は向き（1 右・-1 左）
@@ -158,6 +159,71 @@
     }
   }
 
+  // 鍵（金色の輪と軸と歯）。(x, y) は足もと
+  function drawKey(ctx, x, y, s) {
+    const cy = y - 0.3 * s;
+    const left = x - 0.2 * s;
+    ctx.save();
+    ctx.fillStyle = '#ffcc33';
+    ctx.strokeStyle = '#b07800';
+    ctx.lineWidth = Math.max(1, 0.025 * s);
+    ctx.beginPath();
+    ctx.rect(left + 0.12 * s, cy - 0.035 * s, 0.3 * s, 0.07 * s);
+    ctx.rect(left + 0.34 * s, cy + 0.035 * s, 0.05 * s, 0.09 * s);
+    ctx.rect(left + 0.24 * s, cy + 0.035 * s, 0.05 * s, 0.06 * s);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(left + 0.06 * s, cy, 0.1 * s, 0, TAU);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#4a3a32';
+    ctx.beginPath();
+    ctx.arc(left + 0.06 * s, cy, 0.045 * s, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 錠前つきの部屋の鉄格子と、左上の金色の錠前（鍵で開く印。まだ登れない階の灰色の錠前とは色で分ける）。中身は格子の向こうに見えるまま
+  function drawBars(ctx, rr) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(20,16,14,0.25)';
+    ctx.fillRect(rr.x0 + 4, rr.y0 + 4, rr.w - 8, rr.y1 - rr.y0 - 4);
+    ctx.strokeStyle = '#78858d';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    const n = Math.max(3, Math.round(rr.w / 26));
+    for (let i = 1; i < n; i++) {
+      const x = rr.x0 + (rr.w * i) / n;
+      ctx.moveTo(x, rr.y0 + 6);
+      ctx.lineTo(x, rr.y1);
+    }
+    ctx.stroke();
+    const x = rr.x0 + 18;
+    const y = rr.y0 + 14;
+    ctx.strokeStyle = '#ffcc33';
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.arc(x, y - 3, 6.5, Math.PI, 0);
+    ctx.lineTo(x + 6.5, y + 2);
+    ctx.moveTo(x - 6.5, y + 2);
+    ctx.lineTo(x - 6.5, y - 3);
+    ctx.stroke();
+    ctx.fillStyle = '#ffcc33';
+    ctx.strokeStyle = '#b07800';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(x - 10, y, 20, 15, 3);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#5d4037';
+    ctx.beginPath();
+    ctx.arc(x, y + 6, 2.5, 0, TAU);
+    ctx.fill();
+    ctx.fillRect(x - 1, y + 7, 2, 5);
+    ctx.restore();
+  }
+
   // 錠前（まだ入れない階の印）。(x, y) は真ん中
   function drawLock(ctx, x, y) {
     ctx.strokeStyle = '#e0e0e0';
@@ -182,16 +248,18 @@
     const F = sim.floors;
     const FH = Math.min(128, Math.floor((GROUND - TOP_LIMIT) / F)); // 1階ぶんの高さ
     const fx = [];
-    let lastPower = -1;
+    const hasKeys = sim.rooms.some((r) => r.kind === 'key'); // 鍵のある面だけ、上の帯に鍵の数も出す
+    let lastHud = '';
     let heroGone = false; // 負けて消えた
 
     api.setHint(level.hint || '');
     updateHud();
 
     function updateHud() {
-      if (sim.power === lastPower) return;
-      lastPower = sim.power;
-      api.setHud('強さ ' + sim.power);
+      const text = '強さ ' + sim.power + (hasKeys ? '　鍵 ' + sim.keys : '');
+      if (text === lastHud) return;
+      lastHud = text;
+      api.setHud(text);
     }
 
     const floorTop = (f) => GROUND - f * FH;
@@ -309,6 +377,7 @@
       if (sim.fight && sim.fight.room === r) p.x -= Math.max(0, Math.sin(sim.fight.t * 0.55 + 1.6)) * 6;
       if (r.kind === 'enemy') drawFigure(ctx, p.x, p.y, FIG, FOE, { face: -1, horns: true });
       else if (r.kind === 'boss') drawFigure(ctx, p.x, p.y, BOSS_FIG, FOE, { face: -1, horns: true, crown: true });
+      else if (r.kind === 'key') drawKey(ctx, p.x, p.y + Math.sin(t * 0.1) * 2, FIG);
       else if (r.op === '+') drawPotion(ctx, p.x, p.y, FIG);
       else if (r.op === '×') drawStar(ctx, p.x, p.y + Math.sin(t * 0.1) * 2, FIG);
       else drawSpikes(ctx, p.x, p.y, FIG);
@@ -320,6 +389,8 @@
       if (r.kind === 'enemy' || r.kind === 'boss') {
         const s = r.kind === 'boss' ? BOSS_FIG : FIG;
         KG.drawBadge(ctx, p.x, p.y - s * 0.9 - 4, String(r.v), FOE.badge, r.kind === 'boss' ? 22 : 18);
+      } else if (r.kind === 'key') {
+        KG.drawBadge(ctx, p.x, p.y - FIG * 0.62, '鍵', '#9a6b00', 18);
       } else {
         KG.drawBadge(ctx, p.x, p.y - FIG * 0.62, r.op + r.v, ITEM_BADGE[r.op], 18);
       }
@@ -399,14 +470,28 @@
           api.sound(good ? 'up' : 'down');
           break;
         }
+        case 'key': {
+          const h = heroSpot(sim.at);
+          floatText('鍵 +1', '#ffcc33', h.x, h.y - 110);
+          api.sound('coin');
+          break;
+        }
+        case 'unlock':
+          api.sound('pin');
+          break;
         case 'clear':
           api.finish({ clear: true, title: 'クリア！', message: () => 'てっぺんの敵を倒した（強さ ' + sim.power + '）', delay: 900 });
           break;
         case 'fail': {
-          const h = heroPos();
-          fx.push({ kind: 'poof', x: h.x, y: h.y - 30, t: 0 });
-          heroGone = true;
-          api.sound('poof');
+          // 鍵が足りずに詰んだときは、負けたわけではないので勇者を消さない
+          if (e.reason === 'stuck') {
+            api.sound('down');
+          } else {
+            const h = heroPos();
+            fx.push({ kind: 'poof', x: h.x, y: h.y - 30, t: 0 });
+            heroGone = true;
+            api.sound('poof');
+          }
           api.finish({ clear: false, title: '失敗', message: FAIL_TEXT[e.reason], delay: 1000 });
           break;
         }
@@ -440,11 +525,13 @@
         }
       }
       for (const r of sim.rooms) drawContent(ctx, r, t);
-      // まだ入れない階は暗くし、左の端に錠前の印を出す（中身と数字は見えるまま。先の計画を立てられるように）
+      for (const r of sim.rooms) if (r.locked) drawBars(ctx, roomRect(r));
+      // まだ入れない階は暗くし、左の端の下寄りに錠前の印を出す（中身と数字は見えるまま。先の計画を立てられるように）。
+      // 下寄りなのは、錠前つきの部屋の左上に出す金色の錠前と重ならないようにするため
       for (let f = sim.maxFloor + 2; f <= F; f++) {
         ctx.fillStyle = 'rgba(10,10,30,0.45)';
         ctx.fillRect(TX - TW / 2, floorTop(f), TW, FH - SLAB);
-        drawLock(ctx, TX - TW / 2 + 24, floorTop(f) + (FH - SLAB) / 2 - 6);
+        drawLock(ctx, TX - TW / 2 + 24, floorTop(f) + (FH - SLAB) - 30);
       }
       if (!heroGone) {
         const h = heroPos();
@@ -467,6 +554,8 @@
         sim.tap(r.id);
       } else if (r.floor > sim.maxFloor + 1) {
         fx.push({ kind: 'text', text: 'まだ登れない', color: '#fff', x, y, t: 0, life: 50, rise: 0.4, font: '800 24px system-ui, -apple-system, sans-serif' });
+      } else if (r.locked && sim.keys === 0) {
+        fx.push({ kind: 'text', text: '鍵が要る', color: '#ffcc33', x, y, t: 0, life: 50, rise: 0.4, font: '800 24px system-ui, -apple-system, sans-serif' });
       }
     }
 
