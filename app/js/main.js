@@ -71,7 +71,7 @@
 
   function drawIconInto(cv, game) {
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const px = Math.max(1, Math.round(96 * scale * dpr));
+    const px = Math.max(1, Math.round(84 * scale * dpr)); // 一覧の絵の表示の大きさ（style.css の .game-card .icon）
     cv.width = px;
     cv.height = px;
     const c = cv.getContext('2d');

@@ -9,7 +9,7 @@
   let muted = false;
   const lastPlayed = {};
   // 同じ音が短い間に重なりすぎないようにする間隔（秒）
-  const MIN_GAP = { coin: 0.045, sizzle: 0.2, pin: 0.05, hit: 0.07 };
+  const MIN_GAP = { coin: 0.045, sizzle: 0.2, pin: 0.05, hit: 0.07, buzz: 0.18 };
 
   function getCtx() {
     if (!ac) {
@@ -105,6 +105,17 @@
           break;
         case 'hit':
           noise(a, t, 0.06, 0.15, 2200);
+          break;
+        case 'buzz':
+          tone(a, 205, t, 0.14, 'sawtooth', 0.022, 185);
+          break;
+        case 'sting':
+          noise(a, t, 0.1, 0.16, 4000);
+          tone(a, 1500, t, 0.1, 'square', 0.07, 600);
+          break;
+        case 'pour':
+          noise(a, t, 0.3, 0.1, 1100);
+          tone(a, 320, t, 0.28, 'sine', 0.06, 620);
           break;
         case 'clear':
           [523, 659, 784, 1047].forEach((f, i) => tone(a, f, t + i * 0.09, 0.2, 'triangle', 0.14));

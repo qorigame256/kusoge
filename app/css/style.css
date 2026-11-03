@@ -71,7 +71,7 @@ button {
 }
 
 .logo {
-  margin: calc(110 * var(--u)) 0 0;
+  margin: calc(70 * var(--u)) 0 0;
   text-align: center;
   font-size: calc(64 * var(--u));
   font-weight: 900;
@@ -87,14 +87,17 @@ button {
   color: var(--muted);
 }
 
+/* 5本並べても画面に収まる高さ（2026-11-03 に Windows の Chrome で画面の大きさを5通り変えて実測: カード1枚 114〜117、
+   すき間 12 → 228 から 846〜860 まで。6本目を足すと 972〜989 になり 960 をはみ出す。画面はスクロールしないので、
+   6本目のときは並べ方を考え直す） */
 .game-list {
   position: absolute;
-  top: calc(300 * var(--u));
+  top: calc(228 * var(--u));
   left: calc(32 * var(--u));
   right: calc(32 * var(--u));
   display: flex;
   flex-direction: column;
-  gap: calc(16 * var(--u));
+  gap: calc(12 * var(--u));
 }
 
 .game-card {
@@ -102,17 +105,18 @@ button {
   align-items: center;
   gap: calc(16 * var(--u));
   width: 100%;
-  padding: calc(14 * var(--u));
+  padding: calc(12 * var(--u));
   text-align: left;
   border: calc(2 * var(--u)) solid var(--panel-line);
   border-radius: calc(18 * var(--u));
   background: var(--panel);
 }
 
+/* 84 は main.js の drawIconInto にもある。変えるときは両方を揃える */
 .game-card .icon {
   flex: none;
-  width: calc(96 * var(--u));
-  height: calc(96 * var(--u));
+  width: calc(84 * var(--u));
+  height: calc(84 * var(--u));
   border-radius: calc(14 * var(--u));
   background: #171a33;
 }
@@ -121,7 +125,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: calc(44 * var(--u));
+  font-size: calc(40 * var(--u));
   font-weight: 900;
   color: #4a5085;
 }
