@@ -1,0 +1,5 @@
+# 改行は LF にそろえる（作業フォルダでも LF のまま）
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary

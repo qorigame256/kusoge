@@ -1,0 +1,355 @@
+/* 大きさはすべて「論理ピクセル × --u」で書く。--u は main.js が画面に合わせて入れる（論理 540×960 を画面に収める倍率）。 */
+:root {
+  --u: 1px;
+  --bg: #14162b;
+  --panel: #23284d;
+  --panel-line: #353c72;
+  --text: #f6f3ea;
+  --muted: #a3a8cf;
+  --accent: #ffcc33;
+  --good: #7ee08a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0b0c18;
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  touch-action: none;
+}
+
+/* 大きさは main.js が入れる。最初から大きいと、スマホのブラウザが画面幅を広く読み違える（2026-11-03 に発生） */
+#stage {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  background: linear-gradient(#20244a, var(--bg));
+}
+
+.screen {
+  position: absolute;
+  inset: 0;
+}
+
+.screen[hidden],
+.result[hidden] {
+  display: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* ---- ゲーム一覧 ---- */
+
+.corner-btn {
+  position: absolute;
+  top: calc(18 * var(--u));
+  right: calc(18 * var(--u));
+  padding: calc(8 * var(--u)) calc(14 * var(--u));
+  font-size: calc(17 * var(--u));
+  border: calc(2 * var(--u)) solid var(--panel-line);
+  border-radius: calc(12 * var(--u));
+  background: var(--panel);
+}
+
+.logo {
+  margin: calc(110 * var(--u)) 0 0;
+  text-align: center;
+  font-size: calc(64 * var(--u));
+  font-weight: 900;
+  letter-spacing: calc(2 * var(--u));
+  color: var(--accent);
+  text-shadow: 0 calc(5 * var(--u)) 0 #b0461f;
+}
+
+.tagline {
+  margin: calc(18 * var(--u)) 0 0;
+  text-align: center;
+  font-size: calc(19 * var(--u));
+  color: var(--muted);
+}
+
+.game-list {
+  position: absolute;
+  top: calc(300 * var(--u));
+  left: calc(32 * var(--u));
+  right: calc(32 * var(--u));
+  display: flex;
+  flex-direction: column;
+  gap: calc(16 * var(--u));
+}
+
+.game-card {
+  display: flex;
+  align-items: center;
+  gap: calc(16 * var(--u));
+  width: 100%;
+  padding: calc(14 * var(--u));
+  text-align: left;
+  border: calc(2 * var(--u)) solid var(--panel-line);
+  border-radius: calc(18 * var(--u));
+  background: var(--panel);
+}
+
+.game-card .icon {
+  flex: none;
+  width: calc(96 * var(--u));
+  height: calc(96 * var(--u));
+  border-radius: calc(14 * var(--u));
+  background: #171a33;
+}
+
+.game-card .icon.soon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(44 * var(--u));
+  font-weight: 900;
+  color: #4a5085;
+}
+
+.card-text {
+  min-width: 0;
+}
+
+.card-title {
+  margin: 0;
+  font-size: calc(26 * var(--u));
+  font-weight: 800;
+}
+
+.card-desc {
+  margin: calc(6 * var(--u)) 0 0;
+  font-size: calc(15 * var(--u));
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.card-progress {
+  margin: calc(6 * var(--u)) 0 0;
+  font-size: calc(15 * var(--u));
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.game-card.soon {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.game-card.soon .card-progress {
+  color: var(--muted);
+}
+
+/* ---- 上の帯（レベル選択・遊ぶ画面） ---- */
+
+.bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(92 * var(--u));
+  display: flex;
+  align-items: center;
+  gap: calc(12 * var(--u));
+  padding: 0 calc(18 * var(--u));
+  z-index: 3;
+}
+
+.bar-btn,
+.bar-space {
+  flex: none;
+  width: calc(60 * var(--u));
+  height: calc(60 * var(--u));
+}
+
+.bar-btn {
+  font-size: calc(32 * var(--u));
+  line-height: 1;
+  border: calc(2 * var(--u)) solid var(--panel-line);
+  border-radius: calc(14 * var(--u));
+  background: var(--panel);
+}
+
+.bar-title {
+  flex: 1;
+  margin: 0;
+  text-align: center;
+  font-size: calc(24 * var(--u));
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- レベル選択 ---- */
+
+.level-list {
+  position: absolute;
+  top: calc(120 * var(--u));
+  left: calc(32 * var(--u));
+  right: calc(32 * var(--u));
+  display: flex;
+  flex-direction: column;
+  gap: calc(14 * var(--u));
+}
+
+.level-btn {
+  display: flex;
+  align-items: center;
+  gap: calc(16 * var(--u));
+  width: 100%;
+  padding: calc(16 * var(--u)) calc(18 * var(--u));
+  text-align: left;
+  font-size: calc(21 * var(--u));
+  border: calc(2 * var(--u)) solid var(--panel-line);
+  border-radius: calc(16 * var(--u));
+  background: var(--panel);
+}
+
+.level-num {
+  flex: none;
+  width: calc(46 * var(--u));
+  height: calc(46 * var(--u));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-weight: 900;
+  color: #1d1d1d;
+  background: var(--accent);
+}
+
+.level-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+}
+
+.level-mark {
+  flex: none;
+  font-size: calc(17 * var(--u));
+  font-weight: 800;
+  color: var(--good);
+}
+
+/* ---- 遊ぶ画面 ---- */
+
+#game {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+.play-bar {
+  pointer-events: none;
+}
+
+.play-bar .bar-btn {
+  pointer-events: auto;
+}
+
+.play-info {
+  position: absolute;
+  top: calc(94 * var(--u));
+  left: calc(26 * var(--u));
+  right: calc(26 * var(--u));
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: calc(12 * var(--u));
+  pointer-events: none;
+  z-index: 1;
+}
+
+.play-hint {
+  font-size: calc(17 * var(--u));
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.play-hud {
+  flex: none;
+  font-size: calc(22 * var(--u));
+  font-weight: 900;
+  color: var(--accent);
+}
+
+.result {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 6, 15, 0.6);
+  z-index: 2;
+}
+
+.result-card {
+  width: calc(400 * var(--u));
+  padding: calc(30 * var(--u)) calc(26 * var(--u)) calc(26 * var(--u));
+  text-align: center;
+  border: calc(2 * var(--u)) solid var(--panel-line);
+  border-radius: calc(22 * var(--u));
+  background: var(--panel);
+}
+
+.result-card h3 {
+  margin: 0;
+  font-size: calc(46 * var(--u));
+  font-weight: 900;
+}
+
+.result-card h3.clear {
+  color: var(--accent);
+}
+
+.result-card p {
+  margin: calc(14 * var(--u)) 0 0;
+  font-size: calc(19 * var(--u));
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.result-btns {
+  display: flex;
+  flex-direction: column;
+  gap: calc(12 * var(--u));
+  margin-top: calc(24 * var(--u));
+}
+
+.btn {
+  padding: calc(14 * var(--u)) calc(18 * var(--u));
+  font-size: calc(21 * var(--u));
+  font-weight: 700;
+  border: calc(2 * var(--u)) solid var(--panel-line);
+  border-radius: calc(14 * var(--u));
+  background: #2e3463;
+}
+
+.btn.primary {
+  color: #1d1d1d;
+  border-color: #e0ab17;
+  background: var(--accent);
+}

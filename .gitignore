@@ -1,0 +1,8 @@
+# OS が作るファイル
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# 個人用の設定
+CLAUDE.local.md
+.claude/settings.local.json
