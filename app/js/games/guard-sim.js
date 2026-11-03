@@ -1,8 +1,10 @@
 // 線を引いて守るの中身（線の物理・ハチ・勝ち負けの判定）。DOM・canvas・window には触らない（Node の検査 tools/test-guard.js がそのまま読み込むため）。
-// 線は「曲がらない1枚の板」として、位置・向き・速さ・回る速さを持つ（形は描いた点の並びを丸い粒の列として持つ）。
+// 線は「曲がらない1枚の板」として、位置・向き・速さ・回る速さを持つ（形は描いた点の並びを丸い粒の列として持つ）。線の長さに上限は無い。
 // 犬とハチは回らない丸。ぶつかったら、めり込みを戻す向きの勢い（撃力）と、すべりを止める勢い（摩擦。押す力の MU 倍まで）を
 // 両方に分けて与える。これを何回か繰り返して全部の接触をそろえる（ゲームの物理でよく使う「撃力をくり返し解く」やり方）。
-// 摩擦に上限があるので、斜めに立てかけた線は止まり、強く押されると初めてすべる。
+// 摩擦に上限があるので、斜めに立てかけた線は止まり、強く押されると初めてすべる。ハチの群れも線を押す（押す強さは BEE_M）。
+// ハチは升目の道案内（犬までの道のりを升目ごとに書いた地図）をたどり、地面や線を回り込んで犬へ向かう。線のすき間も通り抜ける。
+// 犬までの道が無い（線で閉じられている）ときは、地面と足場だけをよけた道をたどって線に突き当たり、線を押す。
 // 1回の step() は 1/60 秒。中で SUB 回に分けて計算する（速い粒が線をすり抜けないように）。速さの単位は 論理ピクセル毎秒。
 (function () {
   'use strict';
@@ -18,27 +20,39 @@
   const MAX_SPEED = 1400; // 線と犬の速さの上限（1小刻みに約6。線の太さ 12 より小さく保つ）
   const DAMP = 0.9995; // 小刻みごとの速さの減り（置いた物が揺れ続けないように）
   const LINE_R = 6; // 線の太さの半分
-  const SPACING = 5; // 線の粒の間隔（= インクを使う単位）
+  const SPACING = 5; // 線の粒の間隔
   const MIN_LEN = 20; // これより短い線は、引かなかったことにする（タップで線が出ないように）
   const DOG_R = 28;
   const BEE_R = 7;
   const HIVE_R = 26;
   const TOP = 160; // これより上には線を引けない（guard.js が描く上の帯 150 の下）
   const DRAW_GAP = 2; // 線は地面・犬から、これだけ離れた所までしか引けない（くっつけて描くと、置いた瞬間にめり込むため）
-  // 重さ。線は粒1つが 1（長い線ほど重い）
+  // 重さ。線は粒1つが LINE_M（長い線ほど重い）。ハチの重さは、線を押す強さになる
+  // LINE_M: ハチの群れに押されると動く重さ。巣ごとかこんだドームがハチ20ぴきに1秒で押される距離は 0.5 で 143、1 で 79、0.25 で 182。
+  // 0.25 では5面の張り出しに立てかけた線が押し倒された（9通りずらした中の3通り）
+  const LINE_M = 0.5;
   const DOG_M = 12;
-  const BEE_M = 2;
+  const BEE_M = 6; // 2 では、上のドームが1秒に 45 しか動かなかった
   // 摩擦（押す力の何倍まで、すべりを止められるか）
-  const MU_LINE = 0.8; // 線と地面
+  // MU_LINE: 線と地面。0.5 では5面の張り出しに立てかけた線がすべって倒れた（9通りずらした中の5通り）。
+  // 0.8 との違いは小さい（上のドームが押される距離 137 → 143）
+  const MU_LINE = 0.65;
   const MU_DOG = 1; // 犬と地面（犬は足をふんばる）
   const MU_LINE_DOG = 0.4;
   const MU_BEE = 0.05; // ハチは線や地面にそってすべる
-  const BEE_SPEED = 230; // ハチの飛ぶ速さ
+  const BEE_SPEED = 340; // ハチの飛ぶ速さ
   const BEE_STEER = 0.02; // ハチが向きを変える強さ（1小刻みに、行きたい速さとの差をこの割合だけ縮める）
   const BEE_WANDER = 0.5; // ハチのふらつき（行きたい向きを最大でこの角度だけずらす）
-  const SPAWN_EVERY = 4; // 巣からハチが1ぴき出てくる間隔（刻み）
+  const SPAWN_EVERY = 2; // 巣からハチが1ぴき出てくる間隔（刻み）
   const DEFAULT_TIME = 8; // 守る秒数
   const TOUCH = 1; // ハチと犬がこれだけ離れていても、刺されたとみなす
+  // ハチの道案内
+  const CELL = 10; // 升目の大きさ
+  const NAV_EVERY = 6; // 道案内を作り直す間隔（刻み）。線が押されて動くため
+  const NEAR = 6; // 犬までの道のりがこれだけの升目より近ければ、道案内を使わずまっすぐ犬へ向かう
+  const COLS = Math.ceil(540 / CELL);
+  const ROWS = Math.ceil(960 / CELL);
+  const INF = 1e9;
 
   // 長方形 b（[x1, y1, x2, y2]）と、中心 (x, y)・半径 r の丸の接触。重なっていなければ null。
   // 法線 (nx, ny) は長方形から丸へ向かう向き
@@ -65,6 +79,13 @@
     return { nx: 1, ny: 0, pen: m + r };
   }
 
+  // 点と長方形の距離（中なら 0）
+  function rectDist(x, y, b) {
+    const dx = x < b[0] ? b[0] - x : x > b[2] ? x - b[2] : 0;
+    const dy = y < b[1] ? b[1] - y : y > b[3] ? y - b[3] : 0;
+    return Math.hypot(dx, dy);
+  }
+
   function createSim(level) {
     const rng = KG.rng(level.seed || 1);
     const blocks = level.blocks.map((b) => b.slice());
@@ -73,6 +94,24 @@
     const timeSteps = Math.round((level.time || DEFAULT_TIME) * 60);
     let body = null; // 固まった線（板）
     let contacts = [];
+    // 道案内: 地面と足場のそばの升目（ハチの中心が入れない所）と、犬ごとの道のりの地図
+    const wall = new Uint8Array(COLS * ROWS);
+    for (let j = 0; j < ROWS; j++) {
+      for (let i = 0; i < COLS; i++) {
+        const cx = (i + 0.5) * CELL;
+        const cy = (j + 0.5) * CELL;
+        for (const b of blocks) {
+          if (rectDist(cx, cy, b) < BEE_R + 1) {
+            wall[j * COLS + i] = 1;
+            break;
+          }
+        }
+      }
+    }
+    const blocked = new Uint8Array(COLS * ROWS);
+    const fields = dogs.map(() => new Float64Array(COLS * ROWS).fill(INF)); // 線もよけた道のり（線のすき間を通る道）
+    const terrain = dogs.map(() => new Float64Array(COLS * ROWS)); // 地面と足場だけをよけた道のり（線でふさがれていても、そこまで行って押す）
+    dogs.forEach((d, k) => fillDistance(d, terrain[k], wall));
 
     const sim = {
       level,
@@ -80,8 +119,7 @@
       dogs,
       hives,
       bees: [],
-      ink: level.ink,
-      inkUsed: 0,
+      drawn: 0, // 描いている線の長さ
       stroke: null, // 描いている途中の点の並び [{x, y}]。描いていないときは null
       blockedAt: null, // 最後に線が止められた位置（描画側が印を出す）
       line: null, // 指を離したあとの線の粒の位置 [{x, y}]（描画用。body から毎回作り直す）
@@ -97,9 +135,7 @@
       endStroke,
       drawPath,
       step,
-      inkLeft() {
-        return Math.max(0, sim.ink - sim.inkUsed);
-      },
+      navDist,
       timeLeft() {
         return Math.max(0, timeSteps - sim.defendT) / 60;
       },
@@ -135,13 +171,12 @@
         return false;
       }
       sim.stroke = [{ x, y }];
-      sim.inkUsed = 0;
+      sim.drawn = 0;
       sim.blockedAt = null;
       return true;
     }
 
-    // 指の位置まで、間隔 SPACING で点を足していく。引けない所に当たったらそこで止める（指が戻ってくれば続きを描ける）。
-    // インクが尽きたら、その場で指を離したことにする
+    // 指の位置まで、間隔 SPACING で点を足していく。引けない所に当たったらそこで止める（指が戻ってくれば続きを描ける）
     function extendStroke(x, y) {
       const s = sim.stroke;
       if (!s) return;
@@ -150,10 +185,6 @@
       let dy = y - last.y;
       let d = Math.hypot(dx, dy);
       while (d >= SPACING) {
-        if (sim.inkUsed + SPACING > sim.ink) {
-          endStroke();
-          return;
-        }
         const nx = last.x + (dx / d) * SPACING;
         const ny = last.y + (dy / d) * SPACING;
         if (!canDraw((last.x + nx) / 2, (last.y + ny) / 2) || !canDraw(nx, ny)) {
@@ -162,7 +193,7 @@
         }
         sim.blockedAt = null;
         s.push({ x: nx, y: ny });
-        sim.inkUsed += SPACING;
+        sim.drawn += SPACING;
         last = s[s.length - 1];
         dx = x - last.x;
         dy = y - last.y;
@@ -170,14 +201,14 @@
       }
     }
 
-    // 指を離した。短すぎる線は無かったことにしてインクを戻す。そうでなければ線を固め、ハチが出てくる
+    // 指を離した。短すぎる線は無かったことにする。そうでなければ線を固め、ハチが出てくる
     function endStroke() {
       const s = sim.stroke;
       if (!s) return false;
       sim.stroke = null;
       sim.blockedAt = null;
-      if (sim.inkUsed < MIN_LEN) {
-        sim.inkUsed = 0;
+      if (sim.drawn < MIN_LEN) {
+        sim.drawn = 0;
         return false;
       }
       let cx = 0;
@@ -188,7 +219,7 @@
       }
       cx /= s.length;
       cy /= s.length;
-      // 粒1つの重さを 1 とする。回りにくさ（慣性モーメント）は粒ごとの「重心からの距離の2乗」の和に、粒の円盤のぶんを足す
+      // 回りにくさ（慣性モーメント）は粒ごとの「重心からの距離の2乗」の和に、粒の円盤のぶんを足して、粒の重さを掛ける
       let inertia = 0;
       const ps = s.map((p) => {
         const rx = p.x - cx;
@@ -196,10 +227,11 @@
         inertia += rx * rx + ry * ry + (LINE_R * LINE_R) / 2;
         return { rx, ry };
       });
-      body = { x: cx, y: cy, a: 0, vx: 0, vy: 0, w: 0, im: 1 / s.length, ii: 1 / inertia, ps };
+      body = { x: cx, y: cy, a: 0, vx: 0, vy: 0, w: 0, im: 1 / (s.length * LINE_M), ii: 1 / (inertia * LINE_M), ps };
       sim.line = s.map((p) => ({ x: p.x, y: p.y }));
       sim.state = 'defend';
       sim.events.push({ type: 'solid' });
+      buildNav();
       return true;
     }
 
@@ -211,6 +243,161 @@
       }
       if (sim.stroke) endStroke();
       return sim.state === 'defend';
+    }
+
+    // ---- ハチの道案内 ----
+
+    // 線のそばの升目もふさいでから、犬ごとに「その升目から犬までの道のり（升目の数。斜めは 1.41）」を作る
+    function buildNav() {
+      blocked.set(wall);
+      if (sim.line) {
+        const R = LINE_R + BEE_R;
+        for (const p of sim.line) {
+          const i0 = Math.max(0, Math.floor((p.x - R) / CELL));
+          const i1 = Math.min(COLS - 1, Math.floor((p.x + R) / CELL));
+          const j0 = Math.max(0, Math.floor((p.y - R) / CELL));
+          const j1 = Math.min(ROWS - 1, Math.floor((p.y + R) / CELL));
+          for (let j = j0; j <= j1; j++) {
+            for (let i = i0; i <= i1; i++) {
+              const cx = (i + 0.5) * CELL - p.x;
+              const cy = (j + 0.5) * CELL - p.y;
+              if (cx * cx + cy * cy < R * R) blocked[j * COLS + i] = 1;
+            }
+          }
+        }
+      }
+      dogs.forEach((d, k) => fillDistance(d, fields[k], blocked));
+    }
+
+    // 犬のまわりの升目から広げていく（いちばん近い升目から順に決める）。mask が 1 の升目は通れない
+    function fillDistance(d, dist, mask) {
+      dist.fill(INF);
+      const hc = []; // 二分ヒープ（道のり）
+      const hi = []; // 二分ヒープ（升目の番号）
+      const push = (c, idx) => {
+        let k = hc.length;
+        hc.push(c);
+        hi.push(idx);
+        while (k > 0) {
+          const p = (k - 1) >> 1;
+          if (hc[p] <= hc[k]) break;
+          [hc[p], hc[k]] = [hc[k], hc[p]];
+          [hi[p], hi[k]] = [hi[k], hi[p]];
+          k = p;
+        }
+      };
+      const pop = () => {
+        const c = hc[0];
+        const idx = hi[0];
+        const lc = hc.pop();
+        const li = hi.pop();
+        if (hc.length) {
+          hc[0] = lc;
+          hi[0] = li;
+          let k = 0;
+          for (;;) {
+            const l = k * 2 + 1;
+            const r = l + 1;
+            let m = k;
+            if (l < hc.length && hc[l] < hc[m]) m = l;
+            if (r < hc.length && hc[r] < hc[m]) m = r;
+            if (m === k) break;
+            [hc[m], hc[k]] = [hc[k], hc[m]];
+            [hi[m], hi[k]] = [hi[k], hi[m]];
+            k = m;
+          }
+        }
+        return [c, idx];
+      };
+      const R = DOG_R + BEE_R + 6;
+      const i0 = Math.max(0, Math.floor((d.x - R) / CELL));
+      const i1 = Math.min(COLS - 1, Math.floor((d.x + R) / CELL));
+      const j0 = Math.max(0, Math.floor((d.y - R) / CELL));
+      const j1 = Math.min(ROWS - 1, Math.floor((d.y + R) / CELL));
+      for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) {
+          const idx = j * COLS + i;
+          const cx = (i + 0.5) * CELL - d.x;
+          const cy = (j + 0.5) * CELL - d.y;
+          if (mask[idx] || cx * cx + cy * cy > R * R) continue;
+          dist[idx] = 0;
+          push(0, idx);
+        }
+      }
+      while (hc.length) {
+        const [c, idx] = pop();
+        if (c > dist[idx]) continue;
+        const i = idx % COLS;
+        const j = (idx - i) / COLS;
+        for (let dj = -1; dj <= 1; dj++) {
+          for (let di = -1; di <= 1; di++) {
+            if (!di && !dj) continue;
+            const ni = i + di;
+            const nj = j + dj;
+            if (ni < 0 || nj < 0 || ni >= COLS || nj >= ROWS) continue;
+            const n = nj * COLS + ni;
+            if (mask[n]) continue;
+            // 斜めは、角を削って通らない（両どなりが空いているときだけ）
+            if (di && dj && (mask[j * COLS + ni] || mask[nj * COLS + i])) continue;
+            const nc = c + (di && dj ? 1.414 : 1);
+            if (nc < dist[n]) {
+              dist[n] = nc;
+              push(nc, n);
+            }
+          }
+        }
+      }
+    }
+
+    // (x, y) から k ひき目の犬までの道のり（升目の数）。画面の外やふさがった升目は INF
+    function navDist(k, x, y) {
+      const i = Math.floor(x / CELL);
+      const j = Math.floor(y / CELL);
+      if (i < 0 || j < 0 || i >= COLS || j >= ROWS) return INF;
+      return fields[k][j * COLS + i];
+    }
+
+    // 道のりの地図 dist の上で、(i, j) の升目から犬へ近づく点。犬のすぐそばなら 'near'、道が見つからなければ null
+    function stepOn(dist, i, j) {
+      const here = dist[j * COLS + i];
+      if (here < NEAR) return 'near';
+      let best = here;
+      let bi = -1;
+      let bj = -1;
+      // 今の升目に道があれば、となりの8升から近いほうへ。ふさがった升目にいる（地面や線に触れている）ときは、2升先まで道を探す
+      for (let r = 1; r <= (here < INF ? 1 : 2); r++) {
+        for (let dj = -r; dj <= r; dj++) {
+          for (let di = -r; di <= r; di++) {
+            if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+            const ni = i + di;
+            const nj = j + dj;
+            if (ni < 0 || nj < 0 || ni >= COLS || nj >= ROWS) continue;
+            const v = dist[nj * COLS + ni];
+            if (v < best) {
+              best = v;
+              bi = ni;
+              bj = nj;
+            }
+          }
+        }
+        if (bi >= 0) break;
+      }
+      if (bi < 0) return null;
+      return [(bi + 0.5) * CELL, (bj + 0.5) * CELL];
+    }
+
+    // 道案内で次に向かう点。線のすき間を通る道が無ければ、地面だけをよけた道をたどって、線でふさがれた所まで行って押す。
+    // 犬のすぐそば・どちらの道も無いときは null（まっすぐ犬へ向かう）
+    function navTarget(b) {
+      const i = Math.floor(b.x / CELL);
+      const j = Math.floor(b.y / CELL);
+      if (i < 0 || j < 0 || i >= COLS || j >= ROWS) return null;
+      for (const dist of [fields[b.dog], terrain[b.dog]]) {
+        const t = stepOn(dist, i, j);
+        if (t === 'near') return null;
+        if (t) return t;
+      }
+      return null;
     }
 
     // ---- 動き ----
@@ -302,9 +489,15 @@
         tx = b.x + b.ox * 4;
         ty = -400;
       } else {
-        const d = dogs[b.dog];
-        tx = d.x + b.ox;
-        ty = d.y + b.oy;
+        const nav = navTarget(b);
+        if (nav) {
+          tx = nav[0];
+          ty = nav[1];
+        } else {
+          const d = dogs[b.dog];
+          tx = d.x + b.ox;
+          ty = d.y + b.oy;
+        }
       }
       let dx = tx - b.x;
       let dy = ty - b.y;
@@ -331,7 +524,7 @@
         // ox, oy: 犬のまわりのどこを狙うか（ハチごとに少しずつずらして、群れが一点に固まらないようにする）
         const a = rng() * Math.PI * 2;
         const dog = sim.bees.length % dogs.length;
-        sim.bees.push({ x, y, vx: 0, vy: 40, im: 1 / BEE_M, dog, ox: Math.cos(a) * 12, oy: Math.sin(a) * 12, wa: rng() * 6.28 });
+        sim.bees.push({ x, y, vx: 0, vy: 120, im: 1 / BEE_M, dog, ox: Math.cos(a) * 12, oy: Math.sin(a) * 12, wa: rng() * 6.28 });
         sim.events.push({ type: 'spawn', x, y });
       }
     }
@@ -350,15 +543,30 @@
       const L = sim.line;
       const bees = sim.bees;
       if (body) {
+        // 線の外枠。長い線でも、遠い物とは粒ごとに調べない
+        let x1 = Infinity;
+        let y1 = Infinity;
+        let x2 = -Infinity;
+        let y2 = -Infinity;
+        for (const p of L) {
+          if (p.x < x1) x1 = p.x;
+          if (p.x > x2) x2 = p.x;
+          if (p.y < y1) y1 = p.y;
+          if (p.y > y2) y2 = p.y;
+        }
+        const near = (x, y, r) => x > x1 - r && x < x2 + r && y > y1 - r && y < y2 + r;
+        const nearBlocks = blocks.filter((bl) => bl[0] < x2 + LINE_R && bl[2] > x1 - LINE_R && bl[1] < y2 + LINE_R && bl[3] > y1 - LINE_R);
+        const nearDogs = dogs.filter((d) => near(d.x, d.y, LINE_R + DOG_R));
+        const nearBees = bees.filter((b) => near(b.x, b.y, LINE_R + BEE_R));
         for (let i = 0; i < L.length; i++) {
           const p = L[i];
           const rax = p.x - body.x;
           const ray = p.y - body.y;
-          for (const bl of blocks) {
+          for (const bl of nearBlocks) {
             const c = blockContact(p.x, p.y, LINE_R, bl);
             if (c) addContact(body, null, c.nx, c.ny, c.pen, MU_LINE, rax, ray);
           }
-          for (const d of dogs) {
+          for (const d of nearDogs) {
             const dx = p.x - d.x;
             const dy = p.y - d.y;
             const min = LINE_R + DOG_R;
@@ -368,7 +576,7 @@
               addContact(body, d, dx / dd, dy / dd, min - dd, MU_LINE_DOG, rax, ray);
             }
           }
-          for (const b of bees) {
+          for (const b of nearBees) {
             const dx = p.x - b.x;
             const dy = p.y - b.y;
             const min = LINE_R + BEE_R;
@@ -499,6 +707,7 @@
         spawnBees();
         sim.defendT++;
       }
+      if (sim.state !== 'clear' && sim.t % NAV_EVERY === 0) buildNav();
       for (let i = 0; i < SUB; i++) substep();
       judge();
       // 画面の外へ出たハチ（帰っていったハチ）は消す
@@ -508,5 +717,5 @@
     return sim;
   }
 
-  KG.guardSim = { createSim, LINE_R, SPACING, DOG_R, BEE_R, HIVE_R, TOP, MIN_LEN };
+  KG.guardSim = { createSim, LINE_R, SPACING, DOG_R, BEE_R, HIVE_R, TOP, MIN_LEN, CELL };
 })();

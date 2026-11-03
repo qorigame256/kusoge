@@ -1,6 +1,7 @@
 // 線を引いて守るの各レベルに決めた線を描き、「クリア／どの理由で失敗」になるかを確かめる。
 // クリアになるはずの線は、上下左右に少しずらした9通りすべてでクリアになることも確かめる（指で描く線はぶれるため）。
-// あわせて、線とハチの決まりごと（線は落ちる・置いた線は止まる・インクが尽きたら固まる など）を小さな場面で確かめる。
+// あわせて、線とハチの決まりごと（線は落ちる・置いた線は止まる・線の長さに上限が無い・ハチは地面や床の下を回りこみ、すき間を通り、
+// とじこめられると線を押す・守りが無ければすぐ刺される など）を小さな場面で確かめる。
 // 使い方: node tools/test-guard.js            （このフォルダの app/ を調べる）
 //         node tools/test-guard.js <app のフォルダ>  （壊した写しを調べるとき）
 // 1つでも期待と違えば終了コード 1。
@@ -49,11 +50,35 @@ function poly(list) {
   }
   return out;
 }
+// 点を通るなめらかな曲線（Catmull-Rom）
+function smooth(list) {
+  const out = [list[0]];
+  for (let i = 0; i < list.length - 1; i++) {
+    const p0 = list[Math.max(0, i - 1)];
+    const p1 = list[i];
+    const p2 = list[i + 1];
+    const p3 = list[Math.min(list.length - 1, i + 2)];
+    const n = Math.max(2, Math.ceil(Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) / 3));
+    for (let k = 1; k <= n; k++) {
+      const t = k / n;
+      const f = (a, b, c, d) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t * t + (-a + 3 * b - 3 * c + d) * t * t * t);
+      out.push([f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1])]);
+    }
+  }
+  return out;
+}
+// 左右の床に足を下ろす2つのドームを、床のすき間 (gx1..gx2) に差しこんだくぼみでつなぐ形（8面）
+function omega(l, r, gx1, gx2, top, dip) {
+  const m = (gx1 + gx2) / 2;
+  return smooth([[l, 752], [l + 15, 700], [(l + gx1) / 2, top], [gx1 - 25, 700], [gx1 - 8, 738], [gx1 + 18, 742], [gx1 + 20, 775], [m, dip],
+    [gx2 - 20, 775], [gx2 - 18, 742], [gx2 + 8, 738], [gx2 + 25, 700], [(gx2 + r) / 2, top], [r - 15, 700], [r, 752]]);
+}
 const shift = (pts, dx, dy) => pts.map(([x, y]) => [x + dx, y + dy]);
 
 // [レベル番号(0始まり), 線の名前, 点の並び, 期待する結果]
 // 期待が clear のものは、9通りにずらしてもクリアになることまで確かめる。
-// 6面から先の失敗の例は「素直な考え方では勝てない」ことの確認（片方の犬だけ守る・壁をまたぐ大きなドームはインクが足りない など）。
+// 6面から先の失敗の例は「素直な考え方では勝てない」ことの確認（2ひきを大きなドームでまとめてかこむと、巣もいっしょにかこむか、
+// 床のすき間から入られる など）。どの面も線の長さに上限は無いので、大きなドームは「描けない」のではなく「守れない」ことを確かめる。
 const CASES = [
   [0, 'ふた', poly([[180, 688], [360, 688]]), 'clear'],
   [0, '高い所から落とすふた', poly([[180, 600], [360, 600]]), 'clear'],
@@ -68,26 +93,30 @@ const CASES = [
   [3, '足場をおおう大きなドーム', dome(270, 590, 130), 'clear'],
   [3, '小さすぎて犬の頭に乗るドーム', dome(270, 596, 60), 'fail:sting'],
   [3, '上にふただけ', poly([[180, 520], [360, 520]]), 'fail:sting'],
-  [4, '張り出しに立てかける', poly([[240, 735], [300, 852]]), 'clear'],
   [4, '張り出しに長めに立てかける', poly([[240, 730], [330, 852]]), 'clear'],
+  [4, 'ほら穴の中の低いドーム', smooth([[60, 852], [70, 800], [130, 788], [190, 800], [200, 852]]), 'clear'],
   [4, '入口に立てた棒', poly([[242, 768], [242, 852]]), 'fail:sting'],
-  [4, '中の低いドーム（インクが足りない）', [[60, 852], [70, 800], [100, 790], [130, 788], [160, 790], [190, 800], [200, 852]], 'fail:sting'],
+  [4, '張り出しの上にふただけ', poly([[240, 700], [400, 700]]), 'fail:sting'],
   [5, '長いふた', poly([[60, 680], [480, 680]]), 'clear'],
   [5, '2つの穴をまたぐアーチ', dome(270, 850, 200), 'clear'],
   [5, '左の穴だけふた', poly([[75, 688], [205, 688]]), 'fail:sting'],
-  [6, '大きなドーム', dome(270, 850, 170), 'clear'],
-  [6, '平たいドーム', edome(270, 850, 170, 110), 'clear'],
-  [6, '1ぴきだけドーム', dome(185, 850, 70), 'fail:sting'],
-  [7, '段から地面への屋根', poly([[60, 690], [100, 600], [210, 600], [480, 850]]), 'clear'],
-  [7, '下の犬だけドーム', dome(390, 850, 70), 'fail:sting'],
-  [7, '上の犬だけドーム', dome(150, 690, 60), 'fail:sting'],
-  [8, '壁の上に乗せる山形', poly([[95, 852], [238, 600], [302, 600], [445, 852]]), 'clear'],
-  [8, '壁をまたぐ大きなドーム（インクが足りない）', dome(270, 850, 210), 'fail:sting'],
-  [8, '片側だけ', poly([[95, 852], [100, 760], [160, 720], [240, 700]]), 'fail:sting'],
-  [8, '壁の上に横棒', poly([[100, 640], [440, 640]]), 'fail:sting'],
-  [9, '足場の上の半円', dome(270, 750, 118), 'clear'],
-  [9, '足場をはみ出すコの字', poly([[95, 820], [95, 660], [445, 660], [445, 820]]), 'fail:sting'],
-  [9, '1ぴきだけドーム', dome(210, 750, 60), 'fail:sting'],
+  [6, '巣の下を通る低いドーム', edome(270, 852, 235, 95), 'clear'],
+  [6, '巣の下を通るM字', smooth([[40, 852], [50, 790], [110, 770], [180, 790], [270, 805], [360, 790], [430, 770], [490, 790], [500, 852]]), 'clear'],
+  [6, '巣ごとかこむ大きなドーム', dome(270, 852, 240), 'fail:sting'],
+  [6, '1ぴきだけドーム', dome(110, 852, 70), 'fail:sting'],
+  [7, 'すき間にくぼみを差しこむ', omega(70, 470, 234, 306, 670, 800), 'clear'],
+  [7, 'すき間の上を床の高さで渡る', smooth([[70, 752], [85, 700], [152, 670], [215, 700], [226, 745], [270, 748], [314, 745], [325, 700], [393, 670], [455, 700], [470, 752]]), 'clear'],
+  [7, 'すき間ごとかこむドーム', edome(270, 752, 205, 140), 'fail:sting'],
+  [7, '床からはみ出す大きなドーム', edome(270, 752, 230, 150), 'fail:sting'],
+  [8, '壁の上に乗せるM字', poly([[60, 852], [70, 770], [120, 745], [200, 745], [225, 760], [226, 672], [314, 672], [315, 760], [340, 745], [420, 745], [470, 770], [480, 852]]), 'clear'],
+  [8, '壁の上に乗せるなめらかなM字', smooth([[70, 852], [80, 775], [130, 750], [200, 752], [222, 740], [232, 680], [270, 672], [308, 680], [318, 740], [340, 752], [410, 750], [460, 775], [470, 852]]), 'clear'],
+  [8, '壁をまたぐ大きなドーム', dome(270, 852, 255), 'fail:sting'],
+  [8, '巣にぶつかる高い山形', poly([[95, 852], [238, 600], [302, 600], [445, 852]]), 'fail:sting'],
+  [8, '1ぴきだけドーム', smooth([[90, 852], [100, 780], [160, 760], [220, 780], [235, 852]]), 'fail:sting'],
+  [9, 'すき間を床の高さで渡り、巣の下を通る', smooth([[50, 746], [58, 705], [105, 670], [152, 705], [160, 744], [195, 746], [270, 746], [345, 746], [380, 744], [388, 705], [435, 670], [482, 705], [490, 746]]), 'clear'],
+  [9, '同じ形で山を高めに', smooth([[52, 746], [60, 700], [105, 666], [150, 700], [158, 742], [180, 746], [270, 746], [360, 746], [382, 742], [390, 700], [435, 666], [480, 700], [488, 746]]), 'clear'],
+  [9, 'すき間の上を浮いて渡るM字', smooth([[50, 752], [58, 705], [105, 672], [152, 705], [200, 722], [240, 752], [270, 752], [300, 752], [340, 722], [388, 705], [435, 672], [482, 705], [490, 752]]), 'fail:sting'],
+  [9, '巣ごとかこむ大きなドーム', dome(270, 752, 225), 'fail:sting'],
 ];
 
 function run(levelIndex, pts) {
@@ -119,7 +148,7 @@ for (const [lv, label, pts, expect] of CASES) {
     ok = !miss.length;
   }
   const when = sim.state === 'fail' ? ' ' + (sim.defendT / 60).toFixed(1) + '秒で' : '';
-  const line = ' ' + (lv + 1) + '面 ' + label + '  期待 ' + expect + ' 結果 ' + result + when + '（インク ' + sim.inkUsed + '/' + sim.ink + '）' + extra;
+  const line = ' ' + (lv + 1) + '面 ' + label + '  期待 ' + expect + ' 結果 ' + result + when + '（線の長さ ' + sim.drawn + '）' + extra;
   if (ok) console.log('OK ' + line);
   else ng(line.slice(1));
 }
@@ -131,7 +160,7 @@ LEVELS.forEach((level, lv) => {
 
 // ---- 決まりごと ----
 function box(o) {
-  return Object.assign({ seed: 1, ink: 1000, time: 8, blocks: [[0, 860, 540, 960]], dogs: [{ x: 270, y: 832 }], hives: [] }, o);
+  return Object.assign({ seed: 1, time: 8, blocks: [[0, 860, 540, 960]], dogs: [{ x: 270, y: 832 }], hives: [] }, o);
 }
 function stepN(sim, n) {
   for (let i = 0; i < n; i++) sim.step();
@@ -142,6 +171,25 @@ function maxMoved(a, b) {
   let m = 0;
   for (let i = 0; i < a.length; i++) m = Math.max(m, Math.hypot(a[i][0] - b[i][0], a[i][1] - b[i][1]));
   return m;
+}
+// 線の粒の重心
+function center(sim) {
+  let x = 0;
+  let y = 0;
+  for (const p of sim.line) {
+    x += p.x;
+    y += p.y;
+  }
+  return [x / sim.line.length, y / sim.line.length];
+}
+// 何も守らない短い線を、その面の右上の引ける所に描く
+function uselessLine(sim) {
+  for (let y = 300; y < 700; y += 20) {
+    for (let x = 440; x < 500; x += 10) {
+      if (sim.canDraw(x, y) && sim.canDraw(x + 30, y)) return poly([[x, y], [x + 30, y]]);
+    }
+  }
+  return null;
 }
 // [説明, 確かめる関数（[合っているか, 見た値] を返す）]
 const RULES = [
@@ -178,18 +226,24 @@ const RULES = [
     const limit = 270 - SIM.DOG_R - SIM.LINE_R;
     return [endX <= limit && endX > limit - 10, '線の先 ' + endX.toFixed(1) + '（犬の左の端 ' + limit + ' の手前で止まるはず）'];
   }],
-  ['インクが尽きたら、指を離していなくても線が固まる', () => {
-    const sim = SIM.createSim(box({ ink: 100 }));
-    sim.beginStroke(50, 400);
-    sim.extendStroke(450, 400);
-    return [sim.state === 'defend' && sim.inkUsed <= 100 && sim.inkUsed > 90, '状態 ' + sim.state + ' 使ったインク ' + sim.inkUsed + '/100'];
+  ['線の長さに上限は無い（画面の幅を8往復しても、指を離すまで描き続けられる）', () => {
+    const sim = SIM.createSim(box({}));
+    sim.beginStroke(20, 200);
+    for (let k = 0; k < 8; k++) {
+      sim.extendStroke(520, 210 + k * 40);
+      sim.extendStroke(20, 230 + k * 40);
+    }
+    const drawn = sim.drawn;
+    const before = sim.state;
+    sim.endStroke();
+    return [before === 'draw' && drawn > 7000 && sim.state === 'defend', '描いた長さ ' + drawn + '、指を離す前の状態 ' + before + '、離したあと ' + sim.state];
   }],
-  ['短すぎる線（タップ）は無かったことになり、インクも戻る', () => {
+  ['短すぎる線（タップ）は無かったことになる', () => {
     const sim = SIM.createSim(box({}));
     sim.beginStroke(100, 400);
     sim.extendStroke(110, 400);
     sim.endStroke();
-    return [sim.state === 'draw' && sim.inkUsed === 0 && !sim.line, '状態 ' + sim.state + ' 使ったインク ' + sim.inkUsed];
+    return [sim.state === 'draw' && sim.drawn === 0 && !sim.line, '状態 ' + sim.state + ' 描いた長さ ' + sim.drawn];
   }],
   ['線を描くまでは、ハチは出てこない', () => {
     const sim = SIM.createSim(LEVELS[1]);
@@ -216,12 +270,64 @@ const RULES = [
     stepN(sim, 120);
     return [sim.state === 'fail' && sim.reason === 'fall', '状態 ' + sim.state + ' ' + sim.reason];
   }],
-  ['ハチは犬に向かい、守りが無ければ刺す（2面に短い線だけ）', () => {
-    const { result, sim } = run(1, poly([[450, 500], [480, 500]]));
-    return [result === 'fail:sting' && sim.defendT < 240, '結果 ' + result + ' ' + (sim.defendT / 60).toFixed(1) + '秒'];
+  ['守りが無ければ、どの面でも2.5秒以内に刺される（線を描くと、すぐハチが来る）', () => {
+    const seen = [];
+    let ok = true;
+    LEVELS.forEach((level, lv) => {
+      const sim = SIM.createSim(level);
+      const pts = uselessLine(sim);
+      if (!pts || !sim.drawPath(pts)) {
+        ok = false;
+        seen.push((lv + 1) + '面 線を引ける所が無い');
+        return;
+      }
+      while (sim.state === 'defend') sim.step();
+      if (!(sim.state === 'fail' && sim.reason === 'sting' && sim.defendT < 150)) ok = false;
+      seen.push((lv + 1) + '面 ' + (sim.state === 'fail' ? sim.reason + ' ' + (sim.defendT / 60).toFixed(2) + '秒' : sim.state));
+    });
+    return [ok, seen.join(' / ')];
   }],
-  ['同じ線なら毎回同じ結果になる（9面の山形を2回）', () => {
-    const pts = poly([[95, 852], [238, 600], [302, 600], [445, 852]]);
+  ['ハチは線を描いた直後から出てきて、1秒で30ぴき出そろう', () => {
+    const sim = SIM.createSim(box({ dogs: [{ x: 270, y: 832 }], hives: [{ x: 100, y: 300, n: 30 }] }));
+    sim.drawPath(dome(270, 852, 100));
+    sim.step();
+    const first = sim.bees.length;
+    stepN(sim, 59);
+    return [first >= 1 && sim.bees.length === 30, '1刻み目 ' + first + 'ひき、1秒後 ' + sim.bees.length + 'ひき'];
+  }],
+  // 何も描かない5面では、道案内が無くてもハチは張り出しの上をすべり落ちて犬に届く（道案内を外す壊し方で確かめた）。
+  // 本人が報告した「張り出しの上で止まる」形は、入口を線でふさいだときに出る
+  ['入口を線でふさいでも、ハチは張り出しの上で止まらず、入口まで回りこむ（5面・3秒後）', () => {
+    const sim = SIM.createSim(LEVELS[4]);
+    sim.drawPath(poly([[240, 730], [330, 852]]));
+    stepN(sim, 180);
+    const onTop = sim.bees.filter((b) => b.x < 230 && b.y < 720).length;
+    const entrance = sim.bees.filter((b) => b.x >= 230 && b.y > 700).length;
+    return [sim.state === 'defend' && onTop === 0 && entrance >= 15, '状態 ' + sim.state + '、ハチ ' + sim.bees.length + 'ひきのうち 張り出しの上 ' + onTop + '・入口のそば ' + entrance];
+  }],
+  ['ハチは床の下を回り、すき間を通って入ってくる（8面で、すき間ごとかこむドーム）', () => {
+    const sim = SIM.createSim(LEVELS[7]);
+    sim.drawPath(edome(270, 752, 205, 140));
+    let through = 0;
+    while (sim.state === 'defend') {
+      sim.step();
+      for (const b of sim.bees) if (b.x > 234 && b.x < 306 && b.y > 760 && b.y < 800) through++;
+    }
+    return [sim.state === 'fail' && sim.reason === 'sting' && through > 0, '結果 ' + sim.state + ':' + sim.reason + ' ' + (sim.defendT / 60).toFixed(2) + '秒、すき間の中にいたハチ（のべ刻み） ' + through];
+  }],
+  ['ハチの群れは線を押し動かす（巣ごとかこんだドームが1秒で犬の方へ50以上動く。ハチがいなければ動かない）', () => {
+    const moved = [0, 20].map((n) => {
+      const sim = SIM.createSim(box({ dogs: [{ x: 450, y: 832 }], hives: [{ x: 120, y: 790, n }] }));
+      sim.drawPath(dome(120, 852, 110));
+      stepN(sim, 20);
+      const a = center(sim);
+      stepN(sim, 60);
+      return center(sim)[0] - a[0];
+    });
+    return [Math.abs(moved[0]) < 0.5 && moved[1] > 50, 'ハチ0ぴき ' + moved[0].toFixed(1) + '、20ぴき ' + moved[1].toFixed(1)];
+  }],
+  ['同じ線なら毎回同じ結果になる（9面のM字を2回）', () => {
+    const pts = smooth([[70, 852], [80, 775], [130, 750], [200, 752], [222, 740], [232, 680], [270, 672], [308, 680], [318, 740], [340, 752], [410, 750], [460, 775], [470, 852]]);
     const a = run(8, pts).sim;
     const b = run(8, pts).sim;
     const same = a.state === b.state && a.defendT === b.defendT && maxMoved(snapshot(a), snapshot(b)) === 0 && a.bees.every((e, i) => e.x === b.bees[i].x && e.y === b.bees[i].y);

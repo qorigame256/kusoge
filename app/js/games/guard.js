@@ -296,10 +296,9 @@
     api.setHint(level.hint || '');
     updateHud();
 
+    // 描いている間も、守る秒数を出しておく
     function updateHud() {
-      let text;
-      if (sim.state === 'draw') text = 'インク ' + Math.round((100 * sim.inkLeft()) / sim.ink) + '%';
-      else text = 'のこり ' + Math.ceil(sim.timeLeft() - 1e-9) + '秒';
+      const text = 'のこり ' + Math.ceil(sim.timeLeft() - 1e-9) + '秒';
       if (text === lastHud) return;
       lastHud = text;
       api.setHud(text);
@@ -316,10 +315,10 @@
           break;
         case 'clear':
           for (const d of sim.dogs) for (let i = 0; i < 4; i++) fx.push({ kind: 'heart', x: d.x + (rnd() - 0.5) * 40, y: d.y - 30, t: -i * 10 });
-          api.finish({ clear: true, title: 'クリア！', message: sim.dogs.length > 1 ? '2ひきとも守りきった' : '犬を守りきった', delay: 1100 });
+          api.finish({ clear: true, title: 'クリア！', message: sim.dogs.length > 1 ? '2ひきとも守りきった' : '犬を守りきった', delay: 800 });
           break;
         case 'fail':
-          api.finish({ clear: false, title: '失敗', message: FAIL_TEXT[e.reason] || '', delay: 1300 });
+          api.finish({ clear: false, title: '失敗', message: FAIL_TEXT[e.reason] || '', delay: 1000 });
           break;
       }
     }
