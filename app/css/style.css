@@ -209,15 +209,16 @@ button {
   right: calc(32 * var(--u));
   display: flex;
   flex-direction: column;
-  gap: calc(14 * var(--u));
+  gap: calc(10 * var(--u));
 }
 
+/* 10個並べても画面に収まる高さ（1個 64、すき間 10 → 120 から 850 まで） */
 .level-btn {
   display: flex;
   align-items: center;
   gap: calc(16 * var(--u));
   width: 100%;
-  padding: calc(16 * var(--u)) calc(18 * var(--u));
+  padding: calc(10 * var(--u)) calc(18 * var(--u));
   text-align: left;
   font-size: calc(21 * var(--u));
   border: calc(2 * var(--u)) solid var(--panel-line);
@@ -227,8 +228,8 @@ button {
 
 .level-num {
   flex: none;
-  width: calc(46 * var(--u));
-  height: calc(46 * var(--u));
+  width: calc(40 * var(--u));
+  height: calc(40 * var(--u));
   display: flex;
   align-items: center;
   justify-content: center;

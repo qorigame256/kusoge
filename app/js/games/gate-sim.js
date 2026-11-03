@@ -18,6 +18,14 @@
     return Math.min(3.6, 0.3 + 0.22 * Math.sqrt(Math.max(0, n)));
   }
 
+  // 動く門の列（level の行に move: { amp, period, phase } がある列）が、いまどれだけ横へずれているか（m）。
+  // 走り出してからの刻み数 runT で決まる（戦っている間も動き続ける）。amp はずれる幅、period は1往復の秒数、phase は最初の位置（ラジアン）
+  function rowOffset(row, runT) {
+    const m = row.move;
+    if (!m) return 0;
+    return m.amp * Math.sin((2 * Math.PI * runT) / (60 * m.period) + (m.phase || 0));
+  }
+
   // 門の文字 '+10' '×2' '−5' '÷2' を計算の形にする（ひき算は全角の「−」と半角の「-」のどちらでもよい）
   function parseLabel(label) {
     const c = label.charAt(0);
@@ -37,6 +45,7 @@
     const rows = level.rows.map((r) => ({
       z: r.z,
       gates: r.gates.map((g) => Object.assign({ x1: g.x1, x2: g.x2, label: g.label }, parseLabel(g.label))),
+      move: r.move || null,
       passed: false,
     }));
     const enemies = (level.enemies || []).map((e) => ({ x: e.x, z: e.z, n: e.n, n0: e.n, done: false, boss: false }));
@@ -55,6 +64,7 @@
       reason: null, // 失敗の理由 'zero'（門で0人）| 'battle'（戦いで負け）
       battle: null, // 戦っている相手（enemies の要素か boss）
       t: 0,
+      runT: 0, // 走り出してからの刻み数（動く門の位置を決める）
       events: [], // 描画側が読んで空にする（音や演出のきっかけ）
       start,
       setTargetX,
@@ -112,6 +122,7 @@
 
     function step() {
       sim.t++;
+      if (sim.state === 'run' || sim.state === 'battle') sim.runT++;
       if (sim.state === 'battle') {
         fight();
         return;
@@ -126,7 +137,8 @@
       for (const row of rows) {
         if (row.passed || sim.z < row.z) continue;
         row.passed = true;
-        const i = row.gates.findIndex((g) => sim.x >= g.x1 && sim.x < g.x2);
+        const off = rowOffset(row, sim.runT);
+        const i = row.gates.findIndex((g) => sim.x >= g.x1 + off && sim.x < g.x2 + off);
         if (i < 0) continue;
         const g = row.gates[i];
         const before = sim.count;
@@ -163,5 +175,5 @@
     return sim;
   }
 
-  KG.gateSim = { createSim, crowdRadius, parseLabel, ROAD_HALF, X_LIMIT, SPEED };
+  KG.gateSim = { createSim, crowdRadius, parseLabel, applyOp, rowOffset, ROAD_HALF, X_LIMIT, SPEED };
 })();

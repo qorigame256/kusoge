@@ -193,12 +193,19 @@
       KG.drawBadge(ctx, q.x, q.y, String(n), col.badge,Math.max(13, Math.min(big ? 44 : 34, 0.55 * q.s * (big ? 1.3 : 1))));
     }
 
-    // 通り過ぎた列は描かない（残すと群れより手前に来て、群れの上に重なるため。通った合図は浮かぶ文字と音）
+    // 通り過ぎた列は描かない（残すと群れより手前に来て、群れの上に重なるため。通った合図は浮かぶ文字と音）。
+    // 動く列は、判定と同じずれ（SIM.rowOffset）だけ横へずらして描き、動く範囲を地面の細い溝で見せる
     function drawGateRow(ctx, row) {
       if (row.passed) return;
+      const off = SIM.rowOffset(row, sim.runT);
+      if (row.move) {
+        const lo = Math.min(...row.gates.map((g) => g.x1)) - row.move.amp;
+        const hi = Math.max(...row.gates.map((g) => g.x2)) + row.move.amp;
+        quad(ctx, Math.max(-ROAD_W, lo), Math.min(ROAD_W, hi), row.z - 0.15, row.z + 0.15, 'rgba(40,44,60,0.35)');
+      }
       for (const g of row.gates) {
-        const a = proj(g.x1 + 0.12, row.z, 2.3);
-        const b = proj(g.x2 - 0.12, row.z, 0.1);
+        const a = proj(g.x1 + off + 0.12, row.z, 2.3);
+        const b = proj(g.x2 + off - 0.12, row.z, 0.1);
         if (!a || !b || a.d > FAR) continue;
         ctx.save();
         ctx.fillStyle = g.good ? 'rgba(56,160,255,0.45)' : 'rgba(255,72,72,0.45)';
