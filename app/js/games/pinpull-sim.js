@@ -9,7 +9,10 @@
   const DT = 1 / 60 / SUB;
   const GRAVITY = 1400; // 論理ピクセル毎秒毎秒
   const GSTEP = GRAVITY * DT * DT;
+  const GAS_STEP = -GSTEP * 0.5; // 毒ガスは重さの半分の強さで上へのぼる
+  const GAS_TOP = 150; // これより上へ出た毒ガスは、入れ物の外（空）へ逃げたものとして消す
   const DAMP = 0.998;
+  const GAS_DAMP = 0.98; // 毒ガスは強く減衰させ、煙らしく毎秒 150 ほどでゆっくりのぼらせる（0.998 だと毎秒 1400 で飛んでいく）
   const MAXV = 6; // 1小刻みに動ける最大距離（壁の半分の太さ + 粒の半径より小さく保つ）
   const STIFF = 0.8; // 粒どうしの重なりを1回でどれだけ押し戻すか
   const WALL_R = 8;
@@ -21,9 +24,13 @@
   const TOUCH_HOT = 4; // 固まりたての石は、これだけ離れた溶岩まで固める（金貨の山にまぎれた溶岩を取り残さないため）
   const HOT_STEPS = 60; // 固まりたての石が、触れた溶岩を続けて固める時間（刻み）
   const CALM_MOVE = 0.15; // 1刻みの最大移動がこれ未満なら「止まっている」
+  // 毒ガスは、1刻みにこれ以上動いているときだけ「動いている」とみなす（のぼる速さは 1刻み 2.4 ほど）。
+  // 天井の下にたまったガスは 1刻み 1 ほどで詰まり続けて 0.15 を下回らず、金貨が届いてからクリアになるまで6秒待たされた
+  const GAS_CALM_MOVE = 1.5;
   const CALM_STEPS = 40; // 止まっている状態がこの刻み数続いたら「落ち着いた」
   // 宝が目標数に届いても、溶岩と生きた敵が止まるまではクリアにしない（あとから転がってくるものを見逃さないため）。
   // 水と石は勇者に害が無いので待たない（待つと、狭い部屋に積み上がるまで4秒ほどかかった）。
+  // 毒ガスも待たない（天井の下からゆっくり抜け出し続けて止まらず、クリアが6秒遅れた）。待っている間に部屋へ入ったガスは失敗にする。
   // 止まらないときに最大で待つ刻み数。120 では坂を転がる敵を見逃した（ステージ5 で a→b→c がクリアになった）。
   const GOAL_WAIT_MAX = 360;
   const NOPIN_WAIT_MAX = 360; // ピンが無くなってから、落ち着くのを最大で待つ刻み数
@@ -33,6 +40,7 @@
     water: { r: 6.5, fric: 0.002, rest: 0 },
     lava: { r: 6.5, fric: 0.004, rest: 0 },
     stone: { r: 6.5, fric: 0.006, rest: 0 }, // 摩擦を大きくすると坂の上をゆっくりずり落ち続け、「止まった」判定がいつまでも来ない
+    gas: { r: 6.5, fric: 0.002, rest: 0 }, // 毒ガス。上へのぼって天井にたまる。溶岩に触れると燃えて消え、敵に触れると敵が倒れる
   };
 
   function seg(x1, y1, x2, y2, r) {
@@ -99,6 +107,7 @@
     let next = new Int32Array(Math.max(16, particles.length));
     let lostOff = 0;
     let sizzled = false;
+    let burned = false;
 
     const sim = {
       level,
@@ -112,7 +121,7 @@
       collected: 0,
       lost: 0,
       state: 'playing', // 'playing' | 'clear' | 'fail'
-      reason: null, // 失敗の理由 'lava' | 'monster' | 'nogold'
+      reason: null, // 失敗の理由 'lava' | 'gas' | 'monster' | 'nogold'
       locked: false, // true になったらピンを抜けない
       t: 0,
       maxMove: 0,
@@ -159,8 +168,9 @@
     }
 
     function integrate(p) {
-      let vx = (p.x - p.px) * DAMP;
-      let vy = (p.y - p.py) * DAMP;
+      const damp = p.type === 'gas' ? GAS_DAMP : DAMP;
+      let vx = (p.x - p.px) * damp;
+      let vy = (p.y - p.py) * damp;
       const s2 = vx * vx + vy * vy;
       if (s2 > MAXV * MAXV) {
         const k = MAXV / Math.sqrt(s2);
@@ -170,7 +180,7 @@
       p.px = p.x;
       p.py = p.y;
       p.x += vx;
-      p.y += vy + GSTEP;
+      p.y += vy + (p.type === 'gas' ? GAS_STEP : GSTEP);
     }
 
     // 太さのある線分（壁・ピン・勇者）から押し出し、ぶつかった向きの速度を消して（少しはね返し）、すべる向きに摩擦をかける
@@ -238,7 +248,22 @@
         toStone(a);
       } else if (tb === 'lava' && ta === 'stone' && a.hot > 0) {
         toStone(b);
+      } else if ((ta === 'gas' && tb === 'lava') || (ta === 'lava' && tb === 'gas')) {
+        // 毒ガスが溶岩に触れたら、ガスだけ燃えて消える（溶岩はそのまま）
+        if (gap > TOUCH) return;
+        const g = ta === 'gas' ? a : b;
+        g.dead = true;
+        if (!burned) {
+          burned = true;
+          sim.events.push({ type: 'burn', x: g.x, y: g.y });
+        }
       }
+    }
+
+    // 毒ガスは、ガスどうしのほかは押し合わない（金貨・水・石・溶岩の間をすり抜ける。溶岩には触れた時点で燃える）。
+    // 押し合うと、落ちてくる金貨や石がガスを下へ押し込んで勇者の部屋まで運び、のぼるガスは石を上へ持ち上げた。
+    function passThrough(ta, tb) {
+      return (ta === 'gas') !== (tb === 'gas');
     }
 
     function collidePairs() {
@@ -261,6 +286,7 @@
       }
       for (let i = 0; i < n; i++) {
         const a = particles[i];
+        if (a.dead) continue;
         for (let oy = -1; oy <= 1; oy++) {
           const gy = a.cy + oy;
           if (gy < 0 || gy >= rows) continue;
@@ -270,12 +296,16 @@
             for (let j = head[gy * cols + gx]; j !== -1; j = next[j]) {
               if (j <= i) continue;
               const b = particles[j];
+              if (b.dead) continue;
               let dx = a.x - b.x;
               let dy = a.y - b.y;
               const min = a.r + b.r;
               const d2 = dx * dx + dy * dy;
               if (d2 >= (min + TOUCH_HOT) * (min + TOUCH_HOT)) continue;
-              if (a.type !== b.type) react(a, b, Math.sqrt(d2) - min);
+              if (a.type !== b.type) {
+                react(a, b, Math.sqrt(d2) - min);
+                if (passThrough(a.type, b.type)) continue;
+              }
               if (d2 >= min * min) continue;
               let d = Math.sqrt(d2);
               if (d < 1e-6) {
@@ -302,16 +332,17 @@
       sim.events.push({ type: 'monsterDie', x: m.x, y: m.y });
     }
 
-    // 敵は大きくて重い粒として扱う（押し合いでは粒のほうが大きく動く）。溶岩に触れたら倒れる
+    // 敵は大きくて重い粒として扱う（押し合いでは粒のほうが大きく動く）。溶岩か毒ガスに触れたら倒れる
     function collideMonster(m) {
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i];
+        if (p.dead) continue;
         let dx = p.x - m.x;
         let dy = p.y - m.y;
         const min = p.r + m.r;
         const d2 = dx * dx + dy * dy;
         if (d2 >= (min + TOUCH) * (min + TOUCH)) continue;
-        if (p.type === 'lava') {
+        if (p.type === 'lava' || p.type === 'gas') {
           killMonster(m);
           return;
         }
@@ -330,14 +361,39 @@
       }
     }
 
+    // 敵どうしも押し合う（押し合わないと、上から落ちた敵が下の敵に重なって1ぴきに見えた）
+    function collideMonsterPair(m, o) {
+      let dx = o.x - m.x;
+      let dy = o.y - m.y;
+      const min = m.r + o.r;
+      const d2 = dx * dx + dy * dy;
+      if (d2 >= min * min) return;
+      let d = Math.sqrt(d2);
+      if (d < 1e-6) {
+        dx = 0.01;
+        dy = 0;
+        d = 0.01;
+      }
+      const k = ((min - d) / d) * 0.5;
+      o.x += dx * k;
+      o.y += dy * k;
+      m.x -= dx * k;
+      m.y -= dy * k;
+    }
+
     function substep() {
-      for (let i = 0; i < particles.length; i++) integrate(particles[i]);
+      for (let i = 0; i < particles.length; i++) if (!particles[i].dead) integrate(particles[i]);
       for (const m of monsters) if (m.alive) integrate(m);
       collidePairs();
       for (const m of monsters) if (m.alive) collideMonster(m);
+      for (let i = 0; i < monsters.length; i++) {
+        for (let j = i + 1; j < monsters.length; j++) {
+          if (monsters[i].alive && monsters[j].alive) collideMonsterPair(monsters[i], monsters[j]);
+        }
+      }
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i];
-        collideStatic(p, TYPES[p.type]);
+        if (!p.dead) collideStatic(p, TYPES[p.type]);
       }
       for (const m of monsters) if (m.alive) collideStatic(m, MONSTER);
     }
@@ -350,7 +406,7 @@
       sim.events.push({ type: 'fail', reason });
     }
 
-    // 判定は「勇者の部屋（level.room）に入ったか」で行う。金貨は入った瞬間に回収、溶岩か生きた敵が入ったら失敗。
+    // 判定は「勇者の部屋（level.room）に入ったか」で行う。金貨は入った瞬間に回収、溶岩・毒ガス・生きた敵が入ったら失敗。
     // 穴（level.pits）に落ちた金貨は、もう届かないものとして数える。
     function judge() {
       const room = level.room;
@@ -358,7 +414,7 @@
       let inPits = 0;
       for (const p of particles) {
         if (p.dead) continue;
-        if (p.y > KG.H + 40 || p.x < -40 || p.x > KG.W + 40) {
+        if (p.y > KG.H + 40 || p.x < -40 || p.x > KG.W + 40 || (p.type === 'gas' && p.y < GAS_TOP)) {
           p.dead = true;
           if (p.type === 'gold') lostOff++;
           continue;
@@ -379,6 +435,8 @@
           }
         } else if (p.type === 'lava' && sim.state === 'playing' && inRect(p, room)) {
           fail('lava');
+        } else if (p.type === 'gas' && sim.state === 'playing' && inRect(p, room)) {
+          fail('gas');
         }
       }
       if (sim.state !== 'playing') return;
@@ -418,6 +476,7 @@
 
     function step() {
       sizzled = false;
+      burned = false;
       for (const p of particles) {
         p.sx = p.x;
         p.sy = p.y;
@@ -432,9 +491,10 @@
       let threatMove = 0;
       for (const p of particles) {
         if (p.hot > 0) p.hot--;
-        const mv = Math.abs(p.x - p.sx) + Math.abs(p.y - p.sy);
+        let mv = Math.abs(p.x - p.sx) + Math.abs(p.y - p.sy);
+        if (p.type === 'gas') mv *= CALM_MOVE / GAS_CALM_MOVE;
+        else if (p.type === 'lava' && mv > threatMove) threatMove = mv;
         if (mv > maxMove) maxMove = mv;
-        if (p.type === 'lava' && mv > threatMove) threatMove = mv;
       }
       for (const m of monsters) {
         if (!m.alive) continue;

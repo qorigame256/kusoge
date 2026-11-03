@@ -9,6 +9,7 @@
   // 失敗したときの結果画面の文
   const FAIL_TEXT = {
     lava: '溶岩が勇者に届いてしまった',
+    gas: '毒ガスが勇者に届いてしまった',
     monster: '敵が勇者のところへ来てしまった',
     nogold: '宝が足りなかった',
   };
@@ -70,11 +71,13 @@
     const water = [];
     const lava = [];
     const gold = [];
+    const gas = [];
     for (const p of ps) {
       if (p.type === 'stone') (p.hot > 0 ? hot : stone).push(p);
       else if (p.type === 'water') water.push(p);
       else if (p.type === 'lava') lava.push(p);
       else if (p.type === 'gold') gold.push(p);
+      else if (p.type === 'gas') gas.push(p);
     }
     // 石
     ctx.fillStyle = '#5b5855';
@@ -108,13 +111,22 @@
     circles(ctx, gold, (p) => p.r * 0.55, -1, -1);
     ctx.fillStyle = '#fffbe0';
     circles(ctx, gold, () => 2, -3.5, -3.5);
+    // 毒ガス（すり抜けるので、ほかの粒の上に半透明の煙として重ねる）
+    ctx.fillStyle = 'rgba(120,210,90,0.2)';
+    circles(ctx, gas, () => 13, 0, 0);
+    ctx.fillStyle = 'rgba(140,225,105,0.5)';
+    circles(ctx, gas, (p) => p.r * 1.3, 0, 0);
+    ctx.fillStyle = 'rgba(225,255,205,0.35)';
+    circles(ctx, gas, () => 2.6, -2, -2);
   }
 
-  // 勇者（足もとが x, y）。mood: normal / happy / burned / beaten
+  // 勇者（足もとが x, y）。mood: normal / happy / burned / beaten / gassed
   function drawHero(ctx, x, y, mood, t) {
     const burned = mood === 'burned';
     const beaten = mood === 'beaten';
+    const gassed = mood === 'gassed';
     const happy = mood === 'happy';
+    const skin = burned ? '#4b3a33' : gassed ? '#b4d99a' : '#ffd9ae';
     ctx.save();
     ctx.translate(x, y);
     if (happy) ctx.translate(0, -Math.abs(Math.sin(t * 0.18)) * 10);
@@ -131,7 +143,7 @@
     ctx.ellipse(7, -4, 6, 4.5, 0, 0, TAU);
     ctx.fill();
     // 腕
-    ctx.strokeStyle = burned ? '#3a2a24' : '#ffd2a1';
+    ctx.strokeStyle = burned ? '#3a2a24' : gassed ? '#a9cf8f' : '#ffd2a1';
     ctx.lineWidth = 6;
     ctx.lineCap = 'round';
     ctx.beginPath();
@@ -157,7 +169,7 @@
     ctx.roundRect(-14, -41, 28, 7, 3);
     ctx.fill();
     // 頭
-    ctx.fillStyle = burned ? '#4b3a33' : '#ffd9ae';
+    ctx.fillStyle = skin;
     ctx.beginPath();
     ctx.arc(0, -55, 15, 0, TAU);
     ctx.fill();
@@ -174,7 +186,7 @@
     ctx.strokeStyle = '#2a1a10';
     ctx.fillStyle = '#2a1a10';
     ctx.lineWidth = 2.2;
-    if (burned || beaten) {
+    if (burned || beaten || gassed) {
       ctx.beginPath();
       for (const ex of [-5.5, 5.5]) {
         ctx.moveTo(ex - 3, -57);
@@ -398,6 +410,11 @@
           api.sound('sizzle');
           smoke(e.x, e.y, 5, '220,220,230');
           break;
+        case 'burn':
+          // 毒ガスが溶岩で燃えた（1刻みに1回まで届く）
+          api.sound('sizzle');
+          smoke(e.x, e.y, 1, '255,170,80');
+          break;
         case 'monsterDie':
           api.sound('poof');
           smoke(e.x, e.y, 10, '120,90,160');
@@ -430,16 +447,23 @@
         let show = sim.t - failAt > 35;
         if (sim.reason === 'lava') show = show || sim.particles.some((p) => p.type === 'lava' && near(p, 40));
         if (sim.reason === 'monster') show = show || sim.monsters.some((m) => m.alive && near(m, 50));
+        // ガスは下からのぼってくるので、勇者の足もとより下にあるうちは「近い」に数えない
+        if (sim.reason === 'gas') show = show || sim.particles.some((p) => p.type === 'gas' && near(p, 40) && p.y < h.y + 10);
         if (show && sim.reason === 'lava') {
           heroMood = 'burned';
           api.sound('burn');
           smoke(h.x, h.y - 60, 8, '70,60,60');
+        } else if (show && sim.reason === 'gas') {
+          heroMood = 'gassed';
+          api.sound('down');
+          smoke(h.x, h.y - 84, 4, '120,200,90'); // 顔の高さに出すと、緑の顔と重なって表情が見えなくなる
         } else if (show && sim.reason === 'monster') {
           heroMood = 'beaten';
           api.sound('monster');
         }
       }
       if (heroMood === 'burned' && sim.t % 20 === 0) smoke(sim.hero.x, sim.hero.y - 70, 1, '70,60,60');
+      if (heroMood === 'gassed' && sim.t % 20 === 0) smoke(sim.hero.x, sim.hero.y - 88, 1, '120,200,90');
       for (let i = fx.length - 1; i >= 0; i--) {
         const f = fx[i];
         f.t++;
