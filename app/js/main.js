@@ -14,9 +14,8 @@
   const ctx = canvas.getContext('2d');
 
   // まだ作っていないゲームの枠。同じ id のゲームが登録されたら出さない。
-  const UPCOMING = [
-    { id: 'tower', title: '強さの数字で塔を登る', desc: '自分より弱い敵を倒して強くなり、塔を登る' },
-  ];
+  // 書き方の例: { id: 'xxx', title: '一覧に出す題名', desc: '一覧に出す説明' }
+  const UPCOMING = [];
 
   const save = KG.loadSave();
   if (!save.games || typeof save.games !== 'object') save.games = {};
@@ -290,7 +289,9 @@
   });
   $('btn-play-back').addEventListener('click', () => {
     KG.sound.play('tap');
-    openLevels(play ? play.game : selectedGame);
+    const game = play ? play.game : selectedGame;
+    if (game) openLevels(game);
+    else openTitle();
   });
   $('btn-retry').addEventListener('click', () => {
     KG.sound.play('tap');

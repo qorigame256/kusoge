@@ -12,6 +12,25 @@
     };
   }
 
+  // 人や物の上に出す数字の札。(x, y) は札の下の端の真ん中。描画側だけが呼ぶ（Node の検査は呼ばない）
+  KG.drawBadge = function (ctx, x, y, text, bg, size) {
+    ctx.font = '900 ' + size.toFixed(1) + 'px system-ui, -apple-system, sans-serif';
+    const w = ctx.measureText(text).width + size * 0.9;
+    const h = size * 1.3;
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.roundRect(x - w / 2, y - h + 2, w, h, h * 0.4);
+    ctx.fill();
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.roundRect(x - w / 2, y - h, w, h, h * 0.4);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y - h / 2 + size * 0.06);
+  };
+
   // 論理解像度（縦画面）。描画も当たり判定もこの座標で考え、表示のときだけ拡大縮小する。
   KG.W = 540;
   KG.H = 960;

@@ -37,24 +37,6 @@
     return f;
   }
 
-  function badge(ctx, x, y, text, bg, size) {
-    ctx.font = '900 ' + size.toFixed(1) + 'px system-ui, -apple-system, sans-serif';
-    const w = ctx.measureText(text).width + size * 0.9;
-    const h = size * 1.3;
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    ctx.beginPath();
-    ctx.roundRect(x - w / 2, y - h + 2, w, h, h * 0.4);
-    ctx.fill();
-    ctx.fillStyle = bg;
-    ctx.beginPath();
-    ctx.roundRect(x - w / 2, y - h, w, h, h * 0.4);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, x, y - h / 2 + size * 0.06);
-  }
-
   function create(api, levelIndex) {
     const level = LEVELS[levelIndex];
     const sim = SIM.createSim(level);
@@ -208,7 +190,7 @@
       const R = SIM.crowdRadius(n);
       const q = proj(cx, cz, 1.0 + R * 0.25);
       if (!q || q.d > 90) return;
-      badge(ctx, q.x, q.y, String(n), col.badge, Math.max(13, Math.min(big ? 44 : 34, 0.55 * q.s * (big ? 1.3 : 1))));
+      KG.drawBadge(ctx, q.x, q.y, String(n), col.badge,Math.max(13, Math.min(big ? 44 : 34, 0.55 * q.s * (big ? 1.3 : 1))));
     }
 
     // 通り過ぎた列は描かない（残すと群れより手前に来て、群れの上に重なるため。通った合図は浮かぶ文字と音）
