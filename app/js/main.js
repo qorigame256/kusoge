@@ -1,7 +1,8 @@
 // 画面の切り替え（ゲーム一覧 → レベル選択 → 遊ぶ画面 → 結果）と、ゲームを動かす時計・タップの受け渡し。
 // 各ゲームは KG.registerGame で次の形を登録する:
-//   { id, title, desc, levels: [{ name }], drawIcon(ctx), create(api, levelIndex) → { step(), render(ctx), pointerDown(x, y) } }
-//   step() は 1/60 秒ぶん進める。render(ctx) は論理座標（KG.W × KG.H）で描く。
+//   { id, title, desc, levels: [{ name }], drawIcon(ctx), create(api, levelIndex) → { step(), render(ctx), pointerDown(x, y), pointerMove?(x, y), pointerUp?(x, y) } }
+//   step() は 1/60 秒ぶん進める。render(ctx) は論理座標（KG.W × KG.H）で描く。タップの座標も論理座標。
+//   pointerMove・pointerUp はなぞる操作をするゲームだけが持つ（指を画面の外へ出しても追えるよう、押した指を canvas が捕まえる）。
 (function () {
   'use strict';
   const KG = globalThis.KG;
@@ -14,7 +15,6 @@
 
   // まだ作っていないゲームの枠。同じ id のゲームが登録されたら出さない。
   const UPCOMING = [
-    { id: 'gate', title: '数字ゲート', desc: '門をくぐって兵隊を増やし、敵の群れとぶつかる' },
     { id: 'tower', title: '強さの数字で塔を登る', desc: '自分より弱い敵を倒して強くなり、塔を登る' },
   ];
 
@@ -249,14 +249,33 @@
 
   document.addEventListener('pointerdown', () => KG.sound.unlock(), { passive: true });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  function toLogical(e) {
+    const r = canvas.getBoundingClientRect();
+    return [((e.clientX - r.left) / r.width) * KG.W, ((e.clientY - r.top) / r.height) * KG.H];
+  }
   canvas.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     if (!play) return;
-    const r = canvas.getBoundingClientRect();
-    const x = ((e.clientX - r.left) / r.width) * KG.W;
-    const y = ((e.clientY - r.top) / r.height) * KG.H;
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch (err) {
+      // 捕まえられなくても操作はできる
+    }
+    const [x, y] = toLogical(e);
     play.inst.pointerDown(x, y);
   });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!play || !play.inst.pointerMove) return;
+    const [x, y] = toLogical(e);
+    play.inst.pointerMove(x, y);
+  });
+  const pointerEnd = (e) => {
+    if (!play || !play.inst.pointerUp) return;
+    const [x, y] = toLogical(e);
+    play.inst.pointerUp(x, y);
+  };
+  canvas.addEventListener('pointerup', pointerEnd);
+  canvas.addEventListener('pointercancel', pointerEnd);
 
   $('btn-sound').addEventListener('click', () => {
     KG.sound.setMuted(!KG.sound.isMuted());

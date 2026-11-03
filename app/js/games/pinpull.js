@@ -6,13 +6,6 @@
   const LEVELS = KG.pinpullLevels;
   const TAU = Math.PI * 2;
 
-  // 角の丸い四角を描く命令が無い古いブラウザ向けの代わり（角は丸めずに四角で描く）
-  if (globalThis.CanvasRenderingContext2D && !CanvasRenderingContext2D.prototype.roundRect) {
-    CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h) {
-      this.rect(x, y, w, h);
-    };
-  }
-
   // 失敗したときの結果画面の文
   const FAIL_TEXT = {
     lava: '溶岩が勇者に届いてしまった',

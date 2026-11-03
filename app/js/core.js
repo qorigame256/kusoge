@@ -1,9 +1,16 @@
 // 全体で共有する名前空間 KG と小道具。
 // ES モジュールにせず classic script にしているのは、index.html をダブルクリック（file://）で開いても動かすため。
-// ここは DOM に触らない（Node の検査からも読み込む）。
+// ここは DOM に触らない（Node の検査からも読み込む。ブラウザにしか無い機能は、有るときだけ触る）。
 (function () {
   'use strict';
   const KG = (globalThis.KG = globalThis.KG || {});
+
+  // 角の丸い四角を描く命令が無い古いブラウザ向けの代わり（角は丸めずに四角で描く）。どのゲームの描画も使う
+  if (globalThis.CanvasRenderingContext2D && !CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h) {
+      this.rect(x, y, w, h);
+    };
+  }
 
   // 論理解像度（縦画面）。描画も当たり判定もこの座標で考え、表示のときだけ拡大縮小する。
   KG.W = 540;
