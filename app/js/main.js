@@ -182,7 +182,7 @@
       },
     };
     const inst = game.create(api, levelIndex);
-    play = { game, levelIndex, inst, token };
+    play = { game, levelIndex, inst, token, pointer: null };
   }
 
   function showResult(game, levelIndex, result) {
@@ -250,9 +250,12 @@
     const r = canvas.getBoundingClientRect();
     return [((e.clientX - r.left) / r.width) * KG.W, ((e.clientY - r.top) / r.height) * KG.H];
   }
+  // 最初に触れた指（play.pointer）だけを受け取る。2本目の指も渡すと、砂は2本の指の間がまっすぐ掘れ、線はジグザグに飛ぶ。
+  // 離したときは画面のどこで離しても受け取る（指を捕まえられず、canvas の外で離したときに、触れたままになって止まらないように）
   canvas.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    if (!play) return;
+    if (!play || play.pointer != null) return;
+    play.pointer = e.pointerId;
     try {
       canvas.setPointerCapture(e.pointerId);
     } catch (err) {
@@ -262,17 +265,19 @@
     play.inst.pointerDown(x, y);
   });
   canvas.addEventListener('pointermove', (e) => {
-    if (!play || !play.inst.pointerMove) return;
+    if (!play || e.pointerId !== play.pointer || !play.inst.pointerMove) return;
     const [x, y] = toLogical(e);
     play.inst.pointerMove(x, y);
   });
   const pointerEnd = (e) => {
-    if (!play || !play.inst.pointerUp) return;
+    if (!play || e.pointerId !== play.pointer) return;
+    play.pointer = null;
+    if (!play.inst.pointerUp) return;
     const [x, y] = toLogical(e);
     play.inst.pointerUp(x, y);
   };
-  canvas.addEventListener('pointerup', pointerEnd);
-  canvas.addEventListener('pointercancel', pointerEnd);
+  window.addEventListener('pointerup', pointerEnd);
+  window.addEventListener('pointercancel', pointerEnd);
 
   $('btn-sound').addEventListener('click', () => {
     KG.sound.setMuted(!KG.sound.isMuted());
