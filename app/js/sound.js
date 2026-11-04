@@ -9,7 +9,7 @@
   let muted = false;
   const lastPlayed = {};
   // 同じ音が短い間に重なりすぎないようにする間隔（秒）
-  const MIN_GAP = { coin: 0.045, sizzle: 0.2, pin: 0.05, hit: 0.07, buzz: 0.18, honk: 0.2 };
+  const MIN_GAP = { coin: 0.045, sizzle: 0.2, pin: 0.05, hit: 0.07, buzz: 0.18, honk: 0.2, dig: 0.07, ball: 0.05 };
 
   function getCtx() {
     if (!ac) {
@@ -147,6 +147,15 @@
           break;
         case 'deny':
           tone(a, 160, t, 0.12, 'square', 0.04);
+          break;
+        case 'dig':
+          // 砂を掘る: ざっという短い音
+          noise(a, t, 0.08, 0.06, 1300);
+          break;
+        case 'ball':
+          // 玉が荷台に入る: ころんという音
+          tone(a, 880, t, 0.06, 'triangle', 0.06);
+          tone(a, 1320, t + 0.04, 0.07, 'triangle', 0.05);
           break;
         case 'clear':
           [523, 659, 784, 1047].forEach((f, i) => tone(a, f, t + i * 0.09, 0.2, 'triangle', 0.14));
