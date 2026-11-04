@@ -456,6 +456,7 @@
   KG.registerGame({
     id: 'guard',
     title: '線を引いて守る',
+    cardTitle: ['線を引いて', '守る'],
     desc: '線を1本描いて壁にし、ハチの群れから犬を守る',
     levels: LEVELS.map((l) => ({ name: l.name })),
     drawIcon,

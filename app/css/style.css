@@ -87,18 +87,16 @@ button {
   color: var(--muted);
 }
 
-/* 2列に並べる（2026-11-04 本人決定。説明文はレベル選択の画面に出す）。画面はスクロールしない。
-   2026-11-04 に Windows の Chrome で画面の大きさを5通り変えて実測: 札1枚 163 前後、すき間 12 → 6本（3段）で 228 から 735〜741 まで、
-   仮の札を足した8本（4段）で 907〜916 まで、本物の8本目を足したあとで 906〜914 まで。いまは8本でいっぱい。
-   9本目を足すと5段目が 960 をはみ出す（計算）ので、そのときは並べ方を考え直す。
-   iPhone の文字では測っていない */
+/* 3列に並べる（2026-11-05 本人決定。説明文はレベル選択の画面に出す）。画面はスクロールしない。
+   札の題名は1行に全角6字まで（それより長い題名は、ゲームの cardTitle の区切りで行を変える。main.js の冒頭）。
+   測った値は CLAUDE.md の「Claude が決めた作り」の一覧の項。iPhone の文字では測っていない */
 .game-list {
   position: absolute;
   top: calc(228 * var(--u));
   left: calc(32 * var(--u));
   right: calc(32 * var(--u));
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: calc(12 * var(--u));
 }
 
@@ -138,11 +136,19 @@ button {
   width: 100%;
 }
 
+/* 題名は2行ぶんの高さを取り、真ん中にそろえる（1行の題名の札も、クリア数の高さがほかの札とそろう）。
+   行を変えるのは区切りの間（main.js が入れる wbr）だけ。区切り1つが入りきらないときだけ、その中で行を変える */
 .card-title {
   margin: 0;
+  min-height: 2.5em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: calc(20 * var(--u));
   line-height: 1.25;
   font-weight: 800;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 .card-progress {

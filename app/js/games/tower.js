@@ -592,6 +592,7 @@
   KG.registerGame({
     id: 'tower',
     title: '強さの数字で塔を登る',
+    cardTitle: ['強さの', '数字で', '塔を登る'],
     desc: '自分より弱い敵を倒して強くなり、塔を登る',
     levels: LEVELS.map((l) => ({ name: l.name })),
     drawIcon,

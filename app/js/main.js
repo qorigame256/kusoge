@@ -1,6 +1,8 @@
 // 画面の切り替え（ゲーム一覧 → レベル選択 → 遊ぶ画面 → 結果）と、ゲームを動かす時計・タップの受け渡し。
 // 各ゲームは KG.registerGame で次の形を登録する:
-//   { id, title, desc, levels: [{ name }], drawIcon(ctx), create(api, levelIndex) → { step(), render(ctx), pointerDown(x, y), pointerMove?(x, y), pointerUp?(x, y) } }
+//   { id, title, cardTitle?, desc, levels: [{ name }], drawIcon(ctx), create(api, levelIndex) → { step(), render(ctx), pointerDown(x, y), pointerMove?(x, y), pointerUp?(x, y) } }
+//   cardTitle は一覧の札の題名を、行を変えてよい所で区切った配列（例: ['線を引いて', '守る']）。札は1行に全角6字までしか入らないので、
+//   7字以上の題名に付ける（無ければ title をそのまま出す。区切りの中では行を変えない）。
 //   step() は 1/60 秒ぶん進める。render(ctx) は論理座標（KG.W × KG.H）で描く。タップの座標も論理座標。
 //   pointerMove・pointerUp はなぞる操作をするゲームだけが持つ（指を画面の外へ出しても追えるよう、押した指を canvas が捕まえる）。
 //   渡すのは最初に触れた指だけで、その指を離すまでほかの指は渡さない（下の「操作」）。
@@ -90,12 +92,18 @@
       const icon = document.createElement('canvas');
       icon.className = 'icon';
       card.appendChild(icon);
-      // 一覧は2列の札なので、説明（game.desc）はレベル選択の画面に出す
+      // 一覧は3列の札なので、説明（game.desc）はレベル選択の画面に出す
       const text = document.createElement('div');
       text.className = 'card-text';
       const done = clearedOf(game).filter((i) => i < game.levels.length).length;
       text.innerHTML = '<h3 class="card-title"></h3><p class="card-progress"></p>';
-      text.querySelector('.card-title').textContent = game.title;
+      // 題名は区切りの間（wbr）でだけ行を変える（style.css の .card-title）。h3 が真ん中にそろえる1つの span に入れる
+      const name = document.createElement('span');
+      (game.cardTitle || [game.title]).forEach((part, n) => {
+        if (n) name.appendChild(document.createElement('wbr'));
+        name.appendChild(document.createTextNode(part));
+      });
+      text.querySelector('.card-title').appendChild(name);
       text.querySelector('.card-progress').textContent = 'クリア ' + done + ' / ' + game.levels.length;
       card.appendChild(text);
       card.addEventListener('click', () => {

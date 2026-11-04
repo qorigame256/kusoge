@@ -157,6 +157,21 @@
           tone(a, 880, t, 0.06, 'triangle', 0.06);
           tone(a, 1320, t + 0.04, 0.07, 'triangle', 0.05);
           break;
+        case 'put':
+          // ブロックを置く: ことんという音
+          noise(a, t, 0.07, 0.12, 1100);
+          tone(a, 300, t, 0.09, 'triangle', 0.09, 180);
+          break;
+        case 'line':
+          // 列が消える: しゅわっと上がる音
+          noise(a, t, 0.25, 0.1, 4500);
+          [660, 880, 1175].forEach((f, i) => tone(a, f, t + i * 0.05, 0.12, 'triangle', 0.07));
+          break;
+        case 'crack':
+          // 氷が割れる: ぱりんという音
+          noise(a, t, 0.12, 0.2, 7000);
+          [2600, 3300].forEach((f, i) => tone(a, f, t + i * 0.04, 0.06, 'triangle', 0.04));
+          break;
         case 'clear':
           [523, 659, 784, 1047].forEach((f, i) => tone(a, f, t + i * 0.09, 0.2, 'triangle', 0.14));
           break;

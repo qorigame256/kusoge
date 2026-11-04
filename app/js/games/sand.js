@@ -464,6 +464,7 @@
   KG.registerGame({
     id: 'sand',
     title: '砂を掘って玉を運ぶ',
+    cardTitle: ['砂を掘って', '玉を運ぶ'],
     desc: '指でなぞって砂を掘り、玉をトラックまで転がす',
     levels: LEVELS.map((l) => ({ name: l.name })),
     drawIcon,

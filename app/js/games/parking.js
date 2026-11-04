@@ -567,6 +567,7 @@
   KG.registerGame({
     id: 'parking',
     title: '駐車場から車を出す',
+    cardTitle: ['駐車場から', '車を出す'],
     desc: '車をタップして走らせ、駐車場から全部出す',
     levels: LEVELS.map((l) => ({ name: l.name })),
     drawIcon,
