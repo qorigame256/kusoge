@@ -131,6 +131,23 @@
           tone(a, 415, t, 0.12, 'square', 0.04);
           tone(a, 523, t, 0.12, 'square', 0.035);
           break;
+        case 'unscrew':
+          // ネジを外す: きゅっと上がる音
+          tone(a, 700, t, 0.12, 'triangle', 0.07, 1400);
+          noise(a, t, 0.05, 0.08, 3500);
+          break;
+        case 'screw':
+          // ネジを差す: かちかちと回る音
+          [0, 0.035, 0.07].forEach((d) => tone(a, 1500, t + d, 0.025, 'square', 0.035));
+          break;
+        case 'plank':
+          // 板が落ちる: 木のからんという音
+          noise(a, t, 0.16, 0.18, 900);
+          tone(a, 260, t, 0.14, 'triangle', 0.09, 140);
+          break;
+        case 'deny':
+          tone(a, 160, t, 0.12, 'square', 0.04);
+          break;
         case 'clear':
           [523, 659, 784, 1047].forEach((f, i) => tone(a, f, t + i * 0.09, 0.2, 'triangle', 0.14));
           break;
