@@ -3,6 +3,7 @@
 //   { id, title, desc, levels: [{ name }], drawIcon(ctx), create(api, levelIndex) → { step(), render(ctx), pointerDown(x, y), pointerMove?(x, y), pointerUp?(x, y) } }
 //   step() は 1/60 秒ぶん進める。render(ctx) は論理座標（KG.W × KG.H）で描く。タップの座標も論理座標。
 //   pointerMove・pointerUp はなぞる操作をするゲームだけが持つ（指を画面の外へ出しても追えるよう、押した指を canvas が捕まえる）。
+//   渡すのは最初に触れた指だけで、その指を離すまでほかの指は渡さない（下の「操作」）。
 (function () {
   'use strict';
   const KG = globalThis.KG;
