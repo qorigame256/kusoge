@@ -45,19 +45,97 @@
     ctx.fill();
   }
 
-  // 上から見た車。中心 (cx, cy)、前の向き dir、長さ L・幅 W（ピクセル）。truck はトラック、gold は金色の車
+  // 車体の形（前が +x）。後ろ（x0）の角は小さく、前（x1）の角は大きく丸めて、どちらが前かを形でも見分けられるようにする
+  function bodyPath(ctx, x0, x1, hw, rr, rf) {
+    ctx.beginPath();
+    ctx.moveTo(x0 + rr, -hw);
+    ctx.lineTo(x1 - rf, -hw);
+    ctx.quadraticCurveTo(x1, -hw, x1, -hw + rf);
+    ctx.lineTo(x1, hw - rf);
+    ctx.quadraticCurveTo(x1, hw, x1 - rf, hw);
+    ctx.lineTo(x0 + rr, hw);
+    ctx.quadraticCurveTo(x0, hw, x0, hw - rr);
+    ctx.lineTo(x0, -hw + rr);
+    ctx.quadraticCurveTo(x0, -hw, x0 + rr, -hw);
+    ctx.closePath();
+  }
+
+  // 太い矢印（前が +x）。x はまん中、len は長さ、hh は頭の高さの半分、sh は軸の太さの半分
+  function arrowPath(ctx, x, len, hh, sh) {
+    const tip = x + len / 2;
+    const tail = x - len / 2;
+    const neck = tip - len * 0.46;
+    ctx.beginPath();
+    ctx.moveTo(tip, 0);
+    ctx.lineTo(neck, -hh);
+    ctx.lineTo(neck, -sh);
+    ctx.lineTo(tail, -sh);
+    ctx.lineTo(tail, sh);
+    ctx.lineTo(neck, sh);
+    ctx.lineTo(neck, hh);
+    ctx.closePath();
+  }
+
+  // 前の窓（濃い色のガラスに光の筋）。x0 から x1 まで、後ろの端の高さの半分 h0・前の端の高さの半分 h1
+  function windshield(ctx, x0, x1, h0, h1) {
+    ctx.fillStyle = '#2a3552';
+    ctx.beginPath();
+    ctx.moveTo(x0, -h0);
+    ctx.lineTo(x1, -h1);
+    ctx.lineTo(x1, h1);
+    ctx.lineTo(x0, h0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x0 + (x1 - x0) * 0.35, -h0 * 0.7);
+    ctx.lineTo(x0 + (x1 - x0) * 0.35, h0 * 0.2);
+    ctx.stroke();
+  }
+
+  // 前のライトの光。車より先に全部描くので、すぐ前に車がいればその車に隠れ、空いている所にだけ光が見える
+  function drawBeam(ctx, cx, cy, dir, L, W) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(ROT[dir]);
+    const hl = L / 2;
+    const hw = W / 2;
+    const reach = W * 0.62;
+    const g = ctx.createLinearGradient(hl, 0, hl + reach, 0);
+    g.addColorStop(0, 'rgba(255,244,170,0.5)');
+    g.addColorStop(1, 'rgba(255,244,170,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(hl - 4, -hw * 0.72);
+    ctx.lineTo(hl + reach, -hw * 0.98);
+    ctx.lineTo(hl + reach, hw * 0.98);
+    ctx.lineTo(hl - 4, hw * 0.72);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 上から見た車。中心 (cx, cy)、前の向き dir、長さ L・幅 W（ピクセル）。truck はトラック、gold は金色の車。
+  // 向きは「太い白い矢印」「丸い鼻先と角ばったお尻」「前だけの大きな濃い窓とライト」で示し、前を照らす光（drawBeam）も重ねる
+  // （最初の、細い矢印と前後に同じような窓の絵では、向きが分かりづらいと言われた）
   function drawCar(ctx, cx, cy, dir, L, W, color, truck, gold, t) {
+    const hl = L / 2;
+    const hw = W / 2;
+    const rr = W * 0.16; // 後ろの角の丸み
+    const rf = hw * 0.9; // 前の角の丸み（大きく丸める）
+    // 影（画面の右下へ落とす）
+    ctx.save();
+    ctx.translate(cx + 2, cy + 4);
+    ctx.rotate(ROT[dir]);
+    bodyPath(ctx, -hl, hl, hw, rr, rf);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fill();
+    ctx.restore();
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(ROT[dir]);
     // ここから先は、車の前が +x の向き
-    const hl = L / 2;
-    const hw = W / 2;
-    const r = W * 0.26;
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.beginPath();
-    ctx.roundRect(-hl + 2, -hw + 4, L, W, r);
-    ctx.fill();
     let paint = color;
     if (gold) {
       const g = ctx.createLinearGradient(0, -hw, 0, hw);
@@ -66,88 +144,64 @@
       g.addColorStop(1, '#c98f12');
       paint = g;
     }
-    let arrowX = 0; // 矢印を描く所
+    bodyPath(ctx, -hl, hl, hw, rr, rf);
+    ctx.fillStyle = paint;
+    ctx.fill();
+    // 金色の車はふちを明るく光らせて、ほかの車と見分けやすくする
+    ctx.strokeStyle = gold ? '#fff6c4' : 'rgba(0,0,0,0.22)';
+    ctx.lineWidth = gold ? 3 : 2;
+    ctx.stroke();
+    let arrowX;
+    let arrowLen;
     if (truck) {
-      // 1台に見えるよう、車体は1つの四角で塗り、荷台はその上に明るい箱として重ねる（運転席と離して描くと、小さな別の車に見えた）
-      const cab = W * 0.9; // 運転席の長さ
-      ctx.fillStyle = paint;
-      ctx.beginPath();
-      ctx.roundRect(-hl, -hw, L, W, r * 0.6);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.22)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      // 荷台（白っぽい箱と、横の筋）
-      const bx = -hl + 3;
+      // 1台に見えるよう、車体は1つの形で塗り、荷台はその上に明るい箱として重ねる（運転席と離して描くと、小さな別の車に見えた）
+      const cab = W * 0.95; // 運転席の長さ
+      const bx = -hl + 4;
       const bw = L - cab - 6;
       ctx.fillStyle = 'rgba(255,255,255,0.72)';
       ctx.beginPath();
-      ctx.roundRect(bx, -hw + 3, bw, W - 6, 4);
+      ctx.roundRect(bx, -hw + 4, bw, W - 8, 4);
       ctx.fill();
       ctx.strokeStyle = 'rgba(0,0,0,0.1)';
       ctx.lineWidth = 1.5;
       for (let k = 1; k < 5; k++) {
         const x = bx + (bw * k) / 5;
         ctx.beginPath();
-        ctx.moveTo(x, -hw + 6);
-        ctx.lineTo(x, hw - 6);
+        ctx.moveTo(x, -hw + 7);
+        ctx.lineTo(x, hw - 7);
         ctx.stroke();
       }
-      // 運転席の前の窓
-      ctx.fillStyle = '#cfe8ff';
-      ctx.beginPath();
-      ctx.roundRect(hl - cab * 0.5, -hw * 0.7, cab * 0.28, W * 0.7, 3);
-      ctx.fill();
+      windshield(ctx, hl - cab * 0.62, hl - cab * 0.3, hw * 0.8, hw * 0.66);
       arrowX = bx + bw / 2;
+      arrowLen = Math.min(bw * 0.72, L * 0.34);
     } else {
-      ctx.fillStyle = paint;
+      // 後ろの窓は小さく、前の窓は大きく
+      ctx.fillStyle = '#2a3552';
       ctx.beginPath();
-      ctx.roundRect(-hl, -hw, L, W, r);
+      ctx.roundRect(-hl + L * 0.07, -hw * 0.56, L * 0.06, W * 0.56, 3);
       ctx.fill();
-      // 金色の車はふちを明るく光らせて、ほかの車と見分けやすくする
-      ctx.strokeStyle = gold ? '#fff6c4' : 'rgba(0,0,0,0.18)';
-      ctx.lineWidth = gold ? 3 : 2;
-      ctx.stroke();
-      // 屋根
-      ctx.fillStyle = 'rgba(255,255,255,0.16)';
-      ctx.beginPath();
-      ctx.roundRect(-hl + L * 0.2, -hw * 0.74, L * 0.46, W * 0.74, 6);
-      ctx.fill();
-      // 前と後ろの窓
-      ctx.fillStyle = '#cfe8ff';
-      ctx.beginPath();
-      ctx.moveTo(hl - L * 0.32, -hw * 0.74);
-      ctx.lineTo(hl - L * 0.17, -hw * 0.6);
-      ctx.lineTo(hl - L * 0.17, hw * 0.6);
-      ctx.lineTo(hl - L * 0.32, hw * 0.74);
-      ctx.closePath();
-      ctx.fill();
-      ctx.beginPath();
-      ctx.roundRect(-hl + L * 0.08, -hw * 0.6, L * 0.09, W * 0.6, 3);
-      ctx.fill();
-      arrowX = -hl + L * 0.43;
+      windshield(ctx, hl - L * 0.35, hl - L * 0.2, hw * 0.8, hw * 0.64);
+      arrowX = -hl + L * 0.42;
+      arrowLen = L * 0.4;
     }
     // 前のライトと後ろのランプ
-    ctx.fillStyle = '#fff3a6';
-    ctx.fillRect(hl - 4, -hw * 0.78, 3, W * 0.2);
-    ctx.fillRect(hl - 4, hw * 0.58, 3, W * 0.2);
+    ctx.fillStyle = '#fffbe0';
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(hl - 6, s * hw * 0.52, 3.5, W * 0.1, 0, 0, TAU);
+      ctx.fill();
+    }
     ctx.fillStyle = '#ff5a5a';
-    ctx.fillRect(-hl + 1, -hw * 0.74, 3, W * 0.16);
-    ctx.fillRect(-hl + 1, hw * 0.58, 3, W * 0.16);
-    // 進む向きの矢印
-    const a = W * 0.2;
-    ctx.lineCap = 'round';
+    ctx.fillRect(-hl + 1, -hw * 0.72, 3, W * 0.16);
+    ctx.fillRect(-hl + 1, hw * 0.56, 3, W * 0.16);
+    // 進む向きの太い矢印
+    arrowPath(ctx, arrowX, arrowLen, W * 0.3, W * 0.11);
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-    ctx.lineWidth = Math.max(4, W * 0.13);
-    ctx.beginPath();
-    ctx.moveTo(arrowX - a * 0.6, -a);
-    ctx.lineTo(arrowX + a * 0.6, 0);
-    ctx.lineTo(arrowX - a * 0.6, a);
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.lineWidth = Math.max(3, W * 0.07);
     ctx.stroke();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = Math.max(2.5, W * 0.08);
-    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.fill();
     ctx.restore();
     if (gold) {
       // きらめき（車の向きに関係なく、まわりで光る）
@@ -339,15 +393,21 @@
 
     function render(ctx) {
       drawLot(ctx, L, level);
-      for (let i = 0; i < sim.cars.length; i++) {
-        if (vis[i].gone) continue;
-        const c = sim.cars[i];
-        const r = rectOf(i);
-        const [ox, oy] = shakeOffset(i);
-        const h = horizontal(c.dir);
-        const len = (h ? r.w : r.h) - pad * 2;
-        const wid = (h ? r.h : r.w) - pad * 2;
-        drawCar(ctx, r.x + r.w / 2 + ox, r.y + r.h / 2 + oy, c.dir, len, wid, BODY[i % BODY.length], c.len === 3, c.gold, t);
+      // ライトの光を先に全部描き、そのあと車を描く（光が車の上に重ならないように）
+      for (const pass of ['beam', 'car']) {
+        for (let i = 0; i < sim.cars.length; i++) {
+          if (vis[i].gone) continue;
+          const c = sim.cars[i];
+          const r = rectOf(i);
+          const [ox, oy] = shakeOffset(i);
+          const h = horizontal(c.dir);
+          const len = (h ? r.w : r.h) - pad * 2;
+          const wid = (h ? r.h : r.w) - pad * 2;
+          const x = r.x + r.w / 2 + ox;
+          const y = r.y + r.h / 2 + oy;
+          if (pass === 'beam') drawBeam(ctx, x, y, c.dir, len, wid);
+          else drawCar(ctx, x, y, c.dir, len, wid, BODY[i % BODY.length], c.len === 3, c.gold, t);
+        }
       }
       for (const f of fx) {
         const k = f.t / 22;
