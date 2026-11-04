@@ -2,7 +2,8 @@
 // 駐車場は cols × rows のマス目。車は縦か横に len マス（普通の車 2、トラック 3）を占め、前を向いた方向（dir）へしか進まない。
 // タップした車は前へ進み、前が駐車場の端まで空いていれば外へ出る（盤から消える）。途中に別の車がいれば、そのすぐ手前で止まる。
 // すぐ前に車がいる車は動かない（手数に数えない）。全部の車を出せばクリア。どの車も動けなくなったら失敗。
-// 金色の車（6面から）は、ぶつかったら失敗（ほかの車がぶつかっても、金色の車がぶつかりにいっても）。すぐ前にいて動けないだけなら失敗にしない。
+// 金色の車（6面から）は、ぶつかる・ぶつけられると大破して失敗（ほかの車がぶつかっても、金色の車がぶつかりにいっても。金色の車どうしなら両方が大破）。
+// すぐ前にいて動けないだけなら大破しない（失敗にしない）。
 // 動ける車が残っていても、どれを動かしても金色の車にぶつかるなら、その時点で失敗にする（打つ手が無いのに、やり直しを押すまで待たせないため）。
 // ぶつかった車は元の場所へ戻さず、手前で止めたままにする。戻すと詰む手が無くなり、どの順で出しても解けてしまう（CLAUDE.md「Claude が決めた作り」）。
 (function () {
@@ -15,7 +16,8 @@
     const cols = level.cols;
     const rows = level.rows;
     // level.cars の1台は [x, y, 向き, 長さ, 種類]。x, y は車が占めるマスのうち左上のマス。長さを省くと 2、種類 'gold' は金色の車
-    const cars = level.cars.map(([x, y, dir, len, kind], i) => ({ i, x, y, dir, len: len || 2, gold: kind === 'gold', out: false }));
+    // wrecked は大破した金色の車
+    const cars = level.cars.map(([x, y, dir, len, kind], i) => ({ i, x, y, dir, len: len || 2, gold: kind === 'gold', out: false, wrecked: false }));
 
     const sim = {
       level,
@@ -24,7 +26,7 @@
       cars,
       moves: 0, // 動かした回数（動かなかったタップは数えない）
       state: 'play', // 'play' | 'clear' | 'fail'
-      reason: '', // 失敗の理由。'stuck'（どの車も動けない）| 'nosafe'（どれを動かしても金色の車にぶつかる）| 'gold'（金色の車がぶつかった）
+      reason: '', // 失敗の理由。'stuck'（どの車も動けない）| 'nosafe'（どれを動かしても金色の車にぶつかる）| 'gold'（金色の車がぶつかって大破した）
       events: [], // 描画側が読んで空にする（音や演出のきっかけ）
       tap,
       cellsOf,
@@ -124,6 +126,8 @@
         c.y += dy * free;
         sim.events.push({ type: 'move', car: i, from, dist: free, hit });
         if (c.gold || cars[hit].gold) {
+          c.wrecked = c.gold;
+          cars[hit].wrecked = cars[hit].gold;
           sim.state = 'fail';
           sim.reason = 'gold';
           sim.events.push({ type: 'fail', reason: 'gold', car: i, hit });

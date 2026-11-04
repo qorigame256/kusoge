@@ -106,6 +106,12 @@
         case 'hit':
           noise(a, t, 0.06, 0.15, 2200);
           break;
+        case 'crash':
+          // 金色の車の大破: つぶれる低い音と、ガラスの割れる高い音
+          noise(a, t, 0.45, 0.3, 1600);
+          tone(a, 130, t, 0.3, 'square', 0.09, 45);
+          [2900, 3500, 2500].forEach((f, i) => tone(a, f, t + 0.05 + i * 0.06, 0.07, 'triangle', 0.035));
+          break;
         case 'buzz':
           tone(a, 205, t, 0.14, 'sawtooth', 0.022, 185);
           break;

@@ -19,7 +19,7 @@
   const VMAX = 0.75; // いちばん速いとき
   // 車の色。金色の車とまぎれないよう、黄色・だいだい色は使わない
   const BODY = ['#ef4b4b', '#3d7cff', '#3cc45a', '#a35cf0', '#ff7ab8', '#2ec4d6', '#8e99ad', '#9a6436'];
-  const FAIL_TEXT = { stuck: 'どの車も動けなくなった', nosafe: 'どれを動かしても金色の車にぶつかる', gold: '金色の車にぶつかった' };
+  const FAIL_TEXT = { stuck: 'どの車も動けなくなった', nosafe: 'どれを動かしても金色の車にぶつかる', gold: '金色の車が大破した' };
   const ROT = { R: 0, D: Math.PI / 2, L: Math.PI, U: -Math.PI / 2 };
 
   function layout(level) {
@@ -116,10 +116,85 @@
     ctx.restore();
   }
 
+  // 大破した車の傷（前が +x の向きで描く）。焦げてつやが消え、ぶつかった所 (ix, iy) がへこみ、前の窓にひびが入る。
+  // 爆発や画面の揺れは足さない（CLAUDE.md「広告の『お約束』の演出は入れない」の、失敗したときの大げさな演出）
+  function drawDamage(ctx, L, hl, hw, rr, rf, ix, iy) {
+    ctx.save();
+    bodyPath(ctx, -hl, hl, hw, rr, rf);
+    ctx.clip();
+    ctx.fillStyle = 'rgba(55,35,15,0.45)';
+    ctx.fillRect(-hl, -hw, hl * 2, hw * 2);
+    // へこみ（ぎざぎざの濃い形。縁の明るい線で、つぶれた金属に見せる）と、そこから伸びるしわ
+    const r = hw * 1.35;
+    ctx.fillStyle = 'rgba(45,30,12,0.9)';
+    ctx.beginPath();
+    for (let k = 0; k < 14; k++) {
+      const a = (k / 14) * TAU;
+      const rk = r * (k % 2 ? 0.55 : 1) * (0.8 + 0.2 * Math.sin(k * 2.3));
+      ctx.lineTo(ix + Math.cos(a) * rk, iy + Math.sin(a) * rk);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,226,140,0.65)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,236,170,0.75)';
+    ctx.lineWidth = 1.5;
+    for (let k = 0; k < 5; k++) {
+      const a = k * 1.26 + 0.4;
+      ctx.beginPath();
+      ctx.moveTo(ix + Math.cos(a) * r * 0.35, iy + Math.sin(a) * r * 0.35);
+      ctx.lineTo(ix + Math.cos(a + 0.3) * r * 1.6, iy + Math.sin(a + 0.3) * r * 1.6);
+      ctx.stroke();
+    }
+    // 前の窓のひび（1点から放射状に割れる）
+    const wx = hl - L * 0.28;
+    const wy = -hw * 0.18;
+    ctx.strokeStyle = 'rgba(235,245,255,0.9)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    for (let k = 0; k < 7; k++) {
+      const a = (k / 7) * TAU + 0.3;
+      const len = hw * (0.45 + 0.25 * ((k * 5) % 3) / 2);
+      ctx.moveTo(wx, wy);
+      ctx.lineTo(wx + Math.cos(a) * len, wy + Math.sin(a) * len);
+    }
+    ctx.stroke();
+    ctx.beginPath();
+    for (let k = 0; k <= 7; k++) {
+      const a = (k / 7) * TAU + 0.3;
+      ctx.lineTo(wx + Math.cos(a) * hw * 0.24, wy + Math.sin(a) * hw * 0.24);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 大破した車から上がる黒い煙（画面の上へのぼって消える。くり返す）。age は大破してからの刻み。
+  // 駐車場の地面（灰色）と同じような明るさの灰色にすると、ほとんど見えなかった
+  function drawSmoke(ctx, cx, cy, W, age) {
+    for (let k = 0; k < 4; k++) {
+      const start = k * 12;
+      if (age < start) continue;
+      const p = ((age - start) / 70) % 1;
+      const x = cx + Math.sin(p * 4 + k * 1.9) * W * 0.18;
+      const y = cy - W * 0.1 - p * W * 1.6;
+      const rad = W * (0.2 + p * 0.36);
+      // ふちをぼかす（くっきりした丸では、しみのように見えた）
+      const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
+      g.addColorStop(0, 'rgba(24,24,30,' + (0.7 * (1 - p)).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(24,24,30,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, rad, 0, TAU);
+      ctx.fill();
+    }
+  }
+
   // 上から見た車。中心 (cx, cy)、前の向き dir、長さ L・幅 W（ピクセル）。truck はトラック、gold は金色の車。
   // 向きは「太い白い矢印」「丸い鼻先と角ばったお尻」「前だけの大きな濃い窓とライト」で示し、前を照らす光（drawBeam）も重ねる
-  // （最初の、細い矢印と前後に同じような窓の絵では、向きが分かりづらいと言われた）
-  function drawCar(ctx, cx, cy, dir, L, W, color, truck, gold, t) {
+  // （最初の、細い矢印と前後に同じような窓の絵では、向きが分かりづらいと言われた）。
+  // wreck は大破した車のぶつかった所 { ix, iy }（前が +x の向き）。大破した車はきらめかない
+  function drawCar(ctx, cx, cy, dir, L, W, color, truck, gold, t, wreck) {
     const hl = L / 2;
     const hw = W / 2;
     const rr = W * 0.16; // 後ろの角の丸み
@@ -202,8 +277,9 @@
     ctx.stroke();
     ctx.fillStyle = '#fff';
     ctx.fill();
+    if (wreck) drawDamage(ctx, L, hl, hw, rr, rf, wreck.ix, wreck.iy);
     ctx.restore();
-    if (gold) {
+    if (gold && !wreck) {
       // きらめき（車の向きに関係なく、まわりで光る）
       ctx.fillStyle = '#fffbe0';
       const span = Math.max(L, W) / 2;
@@ -264,6 +340,7 @@
     const vis = sim.cars.map((c) => ({ x: c.x, y: c.y, gone: false })); // 見た目の位置（マス）
     const mov = {}; // 車の番号 → 走っている途中 { tx, ty, v, exit, hit }
     const shake = {}; // 車の番号 → 揺れ { t, n, kind, dir }
+    const wreck = {}; // 車の番号 → 大破 { t（大破してからの刻み）, ix, iy（ぶつかった所。drawCar の wreck）}
     const fx = []; // ぶつかった所の星
     let pending = null; // 勝ち負けが決まったら、ぶつかる動きが終わってから結果を出す
     let t = 0;
@@ -339,6 +416,21 @@
       return [r.x + r.w / 2, r.y];
     }
 
+    // 画面の点 (px, py) を、j 番の車の中心から見た「前が +x」の向きの位置に直す（車体の中に収める）
+    function localPoint(j, px, py) {
+      const c = sim.cars[j];
+      const r = rectOf(j);
+      const dx = px - (r.x + r.w / 2);
+      const dy = py - (r.y + r.h / 2);
+      const a = -ROT[c.dir];
+      const h = horizontal(c.dir);
+      const hl = ((h ? r.w : r.h) - pad * 2) / 2;
+      const hw = ((h ? r.h : r.w) - pad * 2) / 2;
+      const lx = dx * Math.cos(a) - dy * Math.sin(a);
+      const ly = dx * Math.sin(a) + dy * Math.cos(a);
+      return { ix: Math.max(-hl, Math.min(hl, lx)), iy: Math.max(-hw, Math.min(hw, ly)) };
+    }
+
     function step() {
       t++;
       for (const k in mov) {
@@ -365,9 +457,17 @@
           shake[i] = { t: 8, n: 8, kind: 'recoil', dir: c.dir };
           const [px, py] = frontPoint(i);
           fx.push({ x: px, y: py, t: 0, gold: c.gold || sim.cars[m.hit].gold });
-          api.sound('hit');
+          // 大破した金色の車は、ぶつかった所を覚えてへこみを描く（sim は車が止まる前に大破を決めているので、ここで見た目を追いつかせる）
+          let crash = false;
+          for (const j of [i, m.hit]) {
+            if (!sim.cars[j].wrecked) continue;
+            wreck[j] = Object.assign({ t: 0 }, localPoint(j, px, py));
+            crash = true;
+          }
+          api.sound(crash ? 'crash' : 'hit');
         }
       }
+      for (const k in wreck) wreck[k].t++;
       for (const k in shake) if (--shake[k].t <= 0) delete shake[k];
       for (let j = fx.length - 1; j >= 0; j--) if (++fx[j].t >= 22) fx.splice(j, 1);
       if (pending && !Object.keys(mov).some((k) => !mov[k].exit)) {
@@ -405,9 +505,17 @@
           const wid = (h ? r.h : r.w) - pad * 2;
           const x = r.x + r.w / 2 + ox;
           const y = r.y + r.h / 2 + oy;
-          if (pass === 'beam') drawBeam(ctx, x, y, c.dir, len, wid);
-          else drawCar(ctx, x, y, c.dir, len, wid, BODY[i % BODY.length], c.len === 3, c.gold, t);
+          // 大破した車はライトが消える
+          if (pass === 'beam') {
+            if (!wreck[i]) drawBeam(ctx, x, y, c.dir, len, wid);
+          } else drawCar(ctx, x, y, c.dir, len, wid, BODY[i % BODY.length], c.len === 3, c.gold, t, wreck[i]);
         }
+      }
+      for (const k in wreck) {
+        const i = Number(k);
+        const r = rectOf(i);
+        const h = horizontal(sim.cars[i].dir);
+        drawSmoke(ctx, r.x + r.w / 2, r.y + r.h / 2, (h ? r.h : r.w) - pad * 2, wreck[k].t);
       }
       for (const f of fx) {
         const k = f.t / 22;

@@ -7,7 +7,7 @@
 //   4面から先は気をつける人でも負けることがある（詰む手がある）
 // - 素直なやり方（出られる車を先に出し、無ければ金色の車にぶつからない車を上の行・左の列から順に動かす）。7面から先は勝てたら NG
 // - 期待の表 CASES（レベルごとに決めたタップの順と、クリア／失敗の理由）を本物の決まりで流す
-// - 車の動きの決まり RULES（外へ出る・手前で止まる・すぐ前がふさがった車は動かない・トラック・クリア・動けなくなったら失敗・金色の車 など）
+// - 車の動きの決まり RULES（外へ出る・手前で止まる・すぐ前がふさがった車は動かない・トラック・クリア・動けなくなったら失敗・金色の車の大破 など）
 // 使い方: node tools/test-parking.js            （このフォルダの app/ を調べる）
 //         node tools/test-parking.js <app のフォルダ>  （壊した写しを調べるとき）
 //         node tools/test-parking.js --draw      （各レベルの盤を文字で描く。車の文字は CASES の文字と同じ）
@@ -368,6 +368,7 @@ for (const [no, taps, want, n] of CASES) {
 const make = (cols, rows, cars) => SIM.createSim({ cols, rows, cars });
 const where = (sim) => sim.cars.map((c) => (c.out ? '出' : c.x + ',' + c.y)).join(' ');
 const result = (sim) => (sim.state === 'fail' ? 'fail:' + sim.reason : sim.state);
+const wrecks = (sim) => sim.cars.filter((c) => c.wrecked).map((c) => c.i).join(',') || 'なし';
 // 4台が互いのすぐ前をふさいで回る形（どれも動けない）。左上 3×3 に置く
 const PINWHEEL = [[0, 0, 'R'], [2, 0, 'D'], [1, 2, 'L'], [0, 1, 'U']];
 // [説明, 確かめる関数（[合っているか, 見た値] を返す）]
@@ -436,22 +437,28 @@ const RULES = [
     sim.tap(4);
     return [mid === 'play（0 手）' && result(sim) === 'fail:stuck' && sim.moves === 1, mid + ' → ' + result(sim)];
   }],
-  ['金色の車にぶつかったら失敗（gold）', () => {
+  ['金色の車にぶつけたら、金色の車が大破して失敗（gold）。ぶつけた車は大破しない', () => {
     const sim = make(5, 3, [[0, 1, 'R'], [3, 0, 'U', 2, 'gold']]);
     sim.tap(0);
-    return [result(sim) === 'fail:gold' && where(sim) === '1,1 3,0', result(sim) + ' ' + where(sim)];
+    return [result(sim) === 'fail:gold' && where(sim) === '1,1 3,0' && wrecks(sim) === '1', result(sim) + ' ' + where(sim) + ' 大破 ' + wrecks(sim)];
   }],
-  ['金色の車がぶつかりにいっても失敗（gold）', () => {
+  ['金色の車がぶつかりにいっても、金色の車が大破して失敗（gold）。ぶつけられた車は大破しない', () => {
     const sim = make(5, 3, [[0, 1, 'R', 2, 'gold'], [3, 0, 'U']]);
     sim.tap(0);
-    return [result(sim) === 'fail:gold' && where(sim) === '1,1 3,0', result(sim) + ' ' + where(sim)];
+    return [result(sim) === 'fail:gold' && where(sim) === '1,1 3,0' && wrecks(sim) === '0', result(sim) + ' ' + where(sim) + ' 大破 ' + wrecks(sim)];
   }],
-  ['金色の車のすぐ前・すぐ後ろにいて動けないだけなら失敗にしない', () => {
+  ['金色の車どうしがぶつかると、両方とも大破して失敗（gold）', () => {
+    const sim = make(5, 3, [[0, 1, 'R', 2, 'gold'], [3, 0, 'U', 2, 'gold']]);
+    sim.tap(0);
+    return [result(sim) === 'fail:gold' && wrecks(sim) === '0,1', result(sim) + ' 大破 ' + wrecks(sim)];
+  }],
+  ['金色の車のすぐ前・すぐ後ろにいて動けないだけなら、大破も失敗もしない', () => {
     const s1 = make(4, 3, [[0, 1, 'R'], [2, 0, 'U', 2, 'gold']]);
     s1.tap(0);
     const s2 = make(4, 3, [[0, 1, 'R', 2, 'gold'], [2, 0, 'D']]);
     s2.tap(0);
-    return [result(s1) === 'play' && s1.moves === 0 && result(s2) === 'play' && s2.moves === 0, 'ふつうの車 ' + result(s1) + ' 金色の車 ' + result(s2)];
+    return [result(s1) === 'play' && s1.moves === 0 && result(s2) === 'play' && s2.moves === 0 && wrecks(s1) === 'なし' && wrecks(s2) === 'なし',
+      'ふつうの車 ' + result(s1) + ' 大破 ' + wrecks(s1) + ' 金色の車 ' + result(s2) + ' 大破 ' + wrecks(s2)];
   }],
   ['金色の車も、前が空いていれば出られる', () => {
     const sim = make(4, 3, [[0, 1, 'R', 2, 'gold']]);
@@ -464,7 +471,7 @@ const RULES = [
     sim.tap(0);
     const mid = result(sim) + '（' + sim.moves + ' 手）';
     sim.tap(5);
-    return [mid === 'play（0 手）' && result(sim) === 'fail:nosafe' && sim.moves === 1, mid + ' → ' + result(sim)];
+    return [mid === 'play（0 手）' && result(sim) === 'fail:nosafe' && sim.moves === 1 && wrecks(sim) === 'なし', mid + ' → ' + result(sim) + ' 大破 ' + wrecks(sim)];
   }],
   ['終わったあと（失敗・クリア）のタップは何もしない', () => {
     const sim = make(5, 3, [[0, 1, 'R'], [3, 0, 'U', 2, 'gold']]);
