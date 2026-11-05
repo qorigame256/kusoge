@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "kusoge",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["tools/serve.py", "8765"],
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["../Claudeの使い道/tools/quiet-serve.js", "app", "8765"],
       "port": 8765
     }
   ]

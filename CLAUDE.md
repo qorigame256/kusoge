@@ -266,7 +266,10 @@
   期待の表は台本の `CASES`（レベルごとの手順と結果）と `RULES`（決まりごと）。gate は `CASES`・`OPS`（門1つずつ）・`MOVES`（動く門）、sort は `RULES` だけ。
   壊した写しを調べるときは、台本に app のフォルダを渡す（`node tools/test-<名前>.js <app のフォルダ>`。9本とも）。
   出し物を変える引数: gate・tower の `--all`、parking の `--draw`、screw・block の `--cases`。確かめる中身の一覧は各台本の冒頭、詳しい説明は `docs/経緯と実測.md`。
-- `tools/serve.py` … 確認用のローカルサーバー（キャッシュさせない）。`.claude/launch.json` の `kusoge` がこれを 8765 番で起こす。
+- `.claude/launch.json` … 確認用のサーバー `kusoge`。共通の道具 `../Claudeの使い道/tools/quiet-serve.js` が `app/` を 8765 番で出す
+  （キャッシュさせず、.html には音を消す台本を足す。本人に音を聞かせるときは URL に `?sound` を付ける）。ブラウザ欄で確かめたときの音が本人に聞こえたため
+  （2026-11-05 本人の指摘）、同日に `tools/serve.py`（Python。消した）から替えた（共通ルールの「ブラウザで動くもの」の決まり）。
+  パスは相対で書く（公開リポジトリなので、絶対パスだとユーザー名が出る）。道具はリポジトリの外にあるので、ほかの PC に写したリポジトリでは起動しない。
 - `.github/workflows/pages.yml` … main へ push したとき、`app/` か `pages.yml` が変わっていれば `app/` だけを GitHub Pages に公開する
   （書類だけの push では動かない）。共通ルールの雛形（`../TA管理アプリ`）の写しで、
   `../ブラウザゲーム` のものとも同じ中身。
