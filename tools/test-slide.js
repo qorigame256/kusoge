@@ -14,7 +14,8 @@
 //         node tools/test-slide.js <app のフォルダ>  （壊した写しを調べるとき）
 //         node tools/test-slide.js --cases    （解く道具が見つけた勝ち方を CASES の形で出す）
 // 手順の書き方: 1回つかんで動かすごとに「ブロックの文字 + 向きの文字の並び」（向きは U 上・R 右・D 下・L 左）とし、空白でつなぐ。
-// 例 'aRRU' は、ブロック a を右・右・上へ1マスずつ動かす（最後の1歩で盤の外へ出るなら、そこで出る）。
+// 例 'aRRU' は、ブロック a を右・右・上へ1マスずつ動かす（出口の前に来たら、そこで出る・はがれるので、それが最後の1歩）。
+// 文字だけの 'a' は、さわっただけ（出口の前にあって、さわると出る・はがれる）。
 // 1つでも期待と違えば終了コード 1。ほかの台本から require すると、解く道具だけを渡す（検査は走らない）。
 'use strict';
 const path = require('path');
@@ -138,8 +139,9 @@ let DEPTH = new Int32Array(0); // 位置 → 出発点からの歩数
 let MARK = new Int32Array(0); // 位置 → 調べた回の番号（今回の番号なら行ける）
 let QUEUE = new Int32Array(0); // 行ける位置（近い順）
 let markNow = 0;
-// ブロック i が、ほかのブロックを止めたまま行ける位置（左上）を近い順に QUEUE へ並べ、その数を返す
-function reach(P, occ, i, start) {
+// ブロック i が、ほかのブロックを止めたまま行ける位置（左上）を近い順に QUEUE へ並べ、その数を返す。
+// stop（位置の集まり）があれば、その位置には行けるが、その先へは進まない（そこで出る・はがれるため。出発点でも同じ）
+function reach(P, occ, i, start, stop) {
   const B = P.blocks[i];
   if (MARK.length < P.W * P.H) {
     PREV = new Int32Array(P.W * P.H);
@@ -155,6 +157,7 @@ function reach(P, occ, i, start) {
   let n = 1;
   for (let h = 0; h < n; h++) {
     const p = QUEUE[h];
+    if (stop && stop.has(p)) continue;
     const r = (p / P.W) | 0;
     const c = p - r * P.W;
     for (let d = 0; d < 4; d++) {
@@ -216,8 +219,24 @@ function leaveOK(P, occ, i, p, d, col) {
   }
   return true;
 }
+// 2色のブロックの外側がまだはがれていないか
+const outer = (P, s, i) => P.blocks[i].colors.length === 2 && s[2 * i + 1] === 0;
+// ブロック i が、いまの色で出口の前にいることになる位置（そこに来たら出る。2色のブロックの外側の色なら、はがれる）の集まり。
+// 出られる位置のうち、そこに置けて先が空いているもの（occ はいまの置き方。ブロック i のいる所は空きとみなす）
+function leaveAt(P, occ, s, i) {
+  const col = colorOf(P, s, i);
+  const at = new Set();
+  for (const [p, d] of P.blocks[i].exitPos[col]) if (!at.has(p) && fits(P, occ, i, p) && leaveOK(P, occ, i, p, d, col)) at.add(p);
+  return at;
+}
+// 2色のブロック i が位置 p で外側がはがれたとき、そこが内側の色の出口の前でもあって、続けて出るか
+function chainAt(P, occ, i, p) {
+  const col = P.blocks[i].colors[1];
+  return P.blocks[i].exitPos[col].some(([q, d]) => q === p && leaveOK(P, occ, i, p, d, col));
+}
 // 出せるブロックを出し尽くす（s を書きかえる）。出した数を返し、rec があれば出した手順を足す。
-// 出せるときにすぐ出しても手数は増えない（出たブロックは道をあけるだけ）
+// 出せるときにすぐ出しても手数は増えない（出たブロックは道をあけるだけ）。2色のブロックは、外側がはがれた所でそのまま出られるとき
+// （はがれて続けて出る1手）だけここで出す
 function closure(P, s, rec) {
   let count = 0;
   for (let again = true; again; ) {
@@ -225,18 +244,20 @@ function closure(P, s, rec) {
     const occ = occOf(P, s);
     for (let i = 0; i < P.blocks.length && !again; i++) {
       if (s[2 * i] < 0) continue;
-      const B = P.blocks[i];
-      if (B.colors.length === 2 && s[2 * i + 1] === 0) continue;
-      const col = colorOf(P, s, i);
-      // 出られる位置のうち、そこに置けて先が空いているもの。あれば、そこまで行けるかを調べる（近いものを選ぶ）
-      const cand = B.exitPos[col].filter(([p, d]) => fits(P, occ, i, p) && leaveOK(P, occ, i, p, d, col));
-      if (!cand.length) continue;
-      reach(P, occ, i, s[2 * i]);
-      let best = null;
-      for (const [p, d] of cand) if (MARK[p] === markNow && (!best || DEPTH[p] < DEPTH[best[0]])) best = [p, d];
-      if (!best) continue;
-      if (rec) rec.push(B.key + pathTo(best[0]) + DIRS[best[1]]);
+      const stop = leaveAt(P, occ, s, i);
+      if (!stop.size) continue;
+      // 出口の前の位置のうち、行けるもので近いもの（出口の前に来たらそこで出るので、ほかの出口の前を通らずに行けるもの）
+      reach(P, occ, i, s[2 * i], stop);
+      const two = outer(P, s, i);
+      let best = -1;
+      for (const p of stop) {
+        if (MARK[p] !== markNow || (two && !chainAt(P, occ, i, p))) continue;
+        if (best < 0 || DEPTH[p] < DEPTH[best]) best = p;
+      }
+      if (best < 0) continue;
+      if (rec) rec.push(P.blocks[i].key + pathTo(best));
       s[2 * i] = -1;
+      if (two) s[2 * i + 1] = 1;
       count++;
       again = true;
     }
@@ -253,41 +274,48 @@ function fits(P, occ, i, p) {
   }
   return true;
 }
-// 出す手のほかの手（動かす・外側をはがす）を全部並べる [{ t: 打ったあとの形, i: ブロック, p: 行き先, peel: はがす向き（はがさなければ -1）, len: 歩数 }]
+// 出す手のほかの手（動かす・外側をはがす）を全部並べる
+// [{ t: 打ったあとの形, i: ブロック, p: 行き先, peel: はがすか, out: はがれて続けて出るか, len: 歩数 }]。
+// closure のあとの形で呼ぶ（1色のブロックは、もう出口の前へ行けない。2色のブロックの外側は、はがれる所の先へは行けない）
 function expand(P, s) {
   const out = [];
   const occ = occOf(P, s);
   for (let i = 0; i < P.blocks.length; i++) {
     const start = s[2 * i];
     if (start < 0) continue;
-    const B = P.blocks[i];
-    const n = reach(P, occ, i, start);
+    const two = outer(P, s, i);
+    const stop = two ? leaveAt(P, occ, s, i) : null;
+    const n = reach(P, occ, i, start, stop);
     for (let k = 1; k < n; k++) {
       const p = QUEUE[k];
+      if (stop && stop.has(p)) continue;
       const t = s.slice();
       t[2 * i] = p;
-      out.push({ t, i, p, peel: -1, len: DEPTH[p] });
+      out.push({ t, i, p, peel: false, out: false, len: DEPTH[p] });
     }
-    if (B.colors.length !== 2 || s[2 * i + 1] !== 0) continue;
-    // 2色のブロックの外側をはがす手（外側の色で出られる位置のうち、行けて先が空いているもの）
-    for (const [p, d] of B.exitPos[B.colors[0]]) {
-      if (MARK[p] !== markNow || !leaveOK(P, occ, i, p, d, B.colors[0])) continue;
+    if (!two) continue;
+    // 2色のブロックの外側がはがれる手（行けるはがれる所。出発点がそうなら、さわるだけではがれる）
+    for (const p of stop) {
+      if (MARK[p] !== markNow) continue;
+      const chain = chainAt(P, occ, i, p);
       const t = s.slice();
-      t[2 * i] = p;
+      t[2 * i] = chain ? -1 : p;
       t[2 * i + 1] = 1;
-      out.push({ t, i, p, peel: d, len: DEPTH[p] + 1 });
+      out.push({ t, i, p, peel: true, out: chain, len: DEPTH[p] });
     }
   }
   return out;
 }
-// 形 s で打つ手 o（expand が並べたもの）を、手順の1回ぶんの文字にする
+// 形 s で打つ手 o（expand が並べたもの）を、手順の1回ぶんの文字にする（はがれる所へは、ほかのはがれる所を通らない道で行く）
 function dragOf(P, s, o) {
-  reach(P, occOf(P, s), o.i, s[2 * o.i]);
-  return P.blocks[o.i].key + pathTo(o.p) + (o.peel >= 0 ? DIRS[o.peel] : '');
+  const occ = occOf(P, s);
+  reach(P, occ, o.i, s[2 * o.i], outer(P, s, o.i) ? leaveAt(P, occ, s, o.i) : null);
+  return P.blocks[o.i].key + pathTo(o.p);
 }
+// 手 o を形 s に打つ（o.t は closure で書きかわっていることがあるので使わない）
 const play = (s, o) => {
-  s[2 * o.i] = o.p;
-  if (o.peel >= 0) s[2 * o.i + 1] = 1;
+  s[2 * o.i] = o.out ? -1 : o.p;
+  if (o.peel) s[2 * o.i + 1] = 1;
 };
 // いちばん少ない手数の勝ち方（出す手は手数に入るが、出せるときにすぐ出しても手数は増えないので、ほかの手の数で幅優先に探す）
 function solve(level, limit) {
@@ -420,11 +448,11 @@ function main() {
     for (const w of seq.split(' ').filter(Boolean)) {
       const id = sim.blocks.findIndex((b) => b.key === w[0]);
       if (id < 0 || !sim.beginDrag(id)) return { result: 'つかめないブロック ' + w, moves: sim.moves, sim };
+      if (sim.dragging < 0 && w.length > 1) return { result: 'さわっただけで出たのに動かす手 ' + w, moves: sim.moves, sim };
       for (let n = 1; n < w.length; n++) {
         const k = sim.step(DIRS.indexOf(w[n]));
-        const end = k === 'exit' || k === 'peel';
-        if (k !== 'move' && !end) return { result: '動けない手 ' + w + '（' + n + ' 歩目 ' + k + '）', moves: sim.moves, sim };
-        if (end && n !== w.length - 1) return { result: '出たあとにも動かす手 ' + w, moves: sim.moves, sim };
+        if (!k || !k.startsWith('move')) return { result: '動けない手 ' + w + '（' + n + ' 歩目 ' + k + '）', moves: sim.moves, sim };
+        if (sim.dragging < 0 && n !== w.length - 1) return { result: '出たあとにも動かす手 ' + w, moves: sim.moves, sim };
       }
       sim.endDrag();
     }
@@ -529,7 +557,8 @@ function main() {
         if (simOcc.join() !== Array.from(occ).join()) diff = 'マスがちがう（' + mv + ' 手目の前）';
         else if (sim.blocks.some((b, i) => b.layer !== s[2 * i + 1] || b.out !== s[2 * i] < 0)) diff = '色か出たかがちがう（' + mv + ' 手目の前）';
         if (diff || allOut(P, s)) break;
-        // 1歩ずつ: でたらめなブロックとでたらめな向き。道具の結果（動く・出る・はがれる・止まる）と sim の結果を比べる
+        // 1回つかんで1歩: でたらめなブロックとでたらめな向き。道具で決まる結果（さわっただけで出る・はがれる、動く・止まる、
+        // 動いた先で出る・はがれる）と sim の結果を比べる
         const live = P.blocks.map((B, i) => i).filter((i) => s[2 * i] >= 0);
         const i = live[Math.floor(rnd() * live.length)];
         const d = Math.floor(rnd() * 4);
@@ -537,25 +566,37 @@ function main() {
         const r0 = Math.floor(p / P.W) + DR[d];
         const c0 = (p % P.W) + DC[d];
         const B = P.blocks[i];
-        let want;
-        if (r0 < 0 || c0 < 0 || r0 + B.h > P.H || c0 + B.w > P.W) {
-          want = atEdge(P, i, p, d) && leaveOK(P, occ, i, p, d, colorOf(P, s, i)) ? (B.colors.length === 2 && s[2 * i + 1] === 0 ? 'peel' : 'exit') : 'edge';
+        const two = outer(P, s, i);
+        const stop = leaveAt(P, occ, s, i); // 出口の前の位置（ブロック i のいる所は空きとみなすので、1歩動いたあとにもそのまま使える）
+        const leaveKind = (q) => (two ? (chainAt(P, occ, i, q) ? 'peel+exit' : 'peel') : 'exit');
+        let grab = '';
+        let want = null;
+        let to = p;
+        if (stop.has(p)) {
+          grab = leaveKind(p); // さわっただけで出る（はがれる）。つかむのが終わるので、1歩は動かない
+        } else if (r0 < 0 || c0 < 0 || r0 + B.h > P.H || c0 + B.w > P.W) {
+          want = 'edge'; // 出口の前でないので、押し出しても出ない
+        } else if (B.cells.every(([dr, dc]) => {
+          const v = occ[(r0 + dr) * P.W + c0 + dc];
+          return v === -1 || v === i;
+        })) {
+          to = r0 * P.W + c0;
+          want = stop.has(to) ? 'move+' + leaveKind(to) : 'move';
         } else {
-          want = B.cells.every(([dr, dc]) => {
-            const v = occ[(r0 + dr) * P.W + c0 + dc];
-            return v === -1 || v === i;
-          }) ? 'move' : 'blocked';
+          want = 'blocked';
         }
         sim.beginDrag(i);
+        const gotGrab = sim.auto;
         const got = sim.step(d);
         sim.endDrag();
-        if (got !== want) {
-          diff = '結果がちがう（' + mv + ' 手目 ' + B.key + DIRS[d] + '）sim ' + got + ' / 道具 ' + want;
+        if (gotGrab !== grab || got !== want) {
+          diff = '結果がちがう（' + mv + ' 手目 ' + B.key + DIRS[d] + '）sim ' + (gotGrab || '-') + ' ' + got + ' / 道具 ' + (grab || '-') + ' ' + want;
           break;
         }
-        if (want === 'move') s[2 * i] = r0 * P.W + c0;
-        else if (want === 'peel') s[2 * i + 1] = 1;
-        else if (want === 'exit') s[2 * i] = -1;
+        const done = grab || want;
+        if (done.includes('peel')) s[2 * i + 1] = 1;
+        if (done.endsWith('exit')) s[2 * i] = -1;
+        else if (done.startsWith('move')) s[2 * i] = to;
       }
     }
     if (diff) ng(name + ' 本物の決まりと解く道具の突き合わせ: ' + diff);
@@ -577,23 +618,27 @@ function main() {
     console.log('];');
   }
 
-  // ---- 期待の表（レベルごとに決めた手順と結果。2026-11-06 に出した） ----
+  // ---- 期待の表（レベルごとに決めた手順と結果。2026-11-06 に、出口の前で自動で出る決まりに合わせて出し直し、6〜10面を選び直したときにも出し直した） ----
   // 勝ち方は解く道具が見つけたいちばん少ない手数のもの（--cases で出る）。行き詰まる手順は素直なやり方がそのまま進んだもの
-  // （8面・10面の素直なやり方は、最初から、動かすとすぐ出せるブロックができる手が無いので、手順が無い）。
+  // （6面から。6面と 8〜10面の素直なやり方は、出口の前にあるブロックを1つ出したあと、動かすとすぐ出せるブロックができる手が無くて止まる）。
+  // 文字だけの手（1面の 'b' など）は、出口の前にあるブロックにさわるだけで出る手。
   // [面, 手順, 期待の結果（'clear' か、まだ残っている 'play'）, 手数, 説明]
   const CASES = [
-    [1, 'aURU bR cRD', 'clear', 3],
-    [2, 'bDD aDDDD cUULLU', 'clear', 3],
-    [3, 'cLLL fUU dULLLLDD bRD eDDDLLLLUL aRR fUULU', 'clear', 7],
-    [4, 'hR fDRDR cRR gU aULL bURRRDD cLLLDLD dLDDDRDD eDDDLLUULLLUL gDDDDLL', 'clear', 10],
-    [5, 'bL cULL hLLU aDLDL iDDDDDD gRRR dRRRU cUURRRRR hUURU jUUUULLLDLLL aRRDDD eURRRRDDD fUULLL', 'clear', 13],
-    [6, 'aD eULLL hDDLLL fDD dRDDR fUUUU gUUUURRR bRRUUUUUURRU cRRDDDDD iLLD aUUL aRRDDDD', 'clear', 12],
-    [7, 'fL bLULL aU aDDDDRRD cLL iLL gDR iRUU cRDRRUR iDDLLLLUUUUU hDDDDDLD eDDRRR dDDDDRDD eLLLUUUUU', 'clear', 14],
-    [7, 'fL bLULL aU aDDDDRRD', 'play', 4, '素直なやり方で行き詰まる'],
-    [8, 'aU eD hRDR dRRU dLLU aLLLU kRRRRU bU eUUULLLL jURUUULL gRURURUUR bRRUR bDDDLLDLDD cRDDDD fUUULLLL jDDDDDDD eRRDDDLLL iUURRUUUU', 'clear', 18],
-    [9, 'fD jD kR bUU hUUL bDDDDDL fLU mLDLD aLLLL cDRRDDD eRUURR jDRDRRDDD kRDDRDRRR fRRRDRDRDD lDDL aUUUUUU mUUUUUUU dDDLLLLDLL gLDDDDLDLDL gUURRRRRDDD iDDDLLLULLLL iRRRDRRDDD', 'clear', 22],
-    [9, 'hDR bDDDL', 'play', 2, '素直なやり方で行き詰まる'],
-    [10, 'cLL gL dDDD jDDD hRR eU gURRUR cUURRUR dLLLDD dURRRDD jULLLLDD lRURRRDD aDRDDD bURRRRRDD hDDLLLLL kDLL eRRRDDDR eLLLLDD fDRDDDR iRRRDRDDDR', 'clear', 20],
+    [1, 'aUR b cR', 'clear', 3],
+    [2, 'bD aDDD cUULL', 'clear', 3],
+    [3, 'cLL fUU dULLLLD bR eDDDLLLLU aR fUUL', 'clear', 7],
+    [4, 'h fDRD cRR gU aUL bURRRD cLLLDL dLDDDRD eDDDLLUULLLU gDDDDL', 'clear', 10],
+    [5, 'b cULL hLLU aDLDL iDDDDD gRR dRRR cUURRRR hUUR jUUUULLLDLL aRRDD eURRRRDD fUULL', 'clear', 13],
+    [6, 'i gU fU cRRD eDL hDD bLLUU jDDRDRD aLL dLLDLDDL gULLL fUUULLL hUUUUU jULUUU', 'clear', 14],
+    [6, 'i', 'play', 1, '素直なやり方で行き詰まる'],
+    [7, 'h j fDLDDRDRD aDLLDDD c cLLL eLLLL gLLL dRUUULL bUUUU gRRRDD eDRRRDRDD iUUUULLL bDDDDDLLLL dRRDDDDDDL', 'clear', 15],
+    [7, 'h j fDLDDRDRD aDLLDDD c cLLL', 'play', 6, '素直なやり方で行き詰まる'],
+    [8, 'f aR mR hLD mULLL lDRD gDDRDD bLLUUULUUL iULLUUULUUL dRRDRR kRRRDRR mRRRR cLLDDDLL aDDLLDDRR eUUUU hUUURURUUUR hDDDDD jDDDD', 'clear', 18],
+    [8, 'f', 'play', 1, '素直なやり方で行き詰まる'],
+    [9, 'd fD hD eRRU gRRRR bDDDR kULLDDDDD aLULU jUUUUU mULUUULLD eDLLDLDLDL cDDLDLDLDL lDD bRRRUURR bDLLDLLUUUU hUUUUU fUULLLLLLUU iDDRDDLLDLL hDLLLLLD', 'clear', 19],
+    [9, 'd', 'play', 1, '素直なやり方で行き詰まる'],
+    [10, 'd hR mU gR jR bR cR aDDDD aUUUUU iLU bULUU cUUULUU eLLUUL fLLLL lDDLDDL hDLLLLUUUUU hDDD jDRR gDDLLLLL mDDDLLLLLL kRDDLLLUULUL', 'clear', 21],
+    [10, 'd', 'play', 1, '素直なやり方で行き詰まる'],
   ];
   for (const [no, seq, want, n, note] of CASES) {
     const level = LEVELS[no - 1];
@@ -611,9 +656,15 @@ function main() {
   // 小さな面を作る（grid は壁を含めた盤、colors はブロックの色）
   const make = (grid, colors) => SIM.createSim({ grid, colors });
   const at = (sim, key) => sim.blocks.find((b) => b.key === key);
+  // つかんで dirs の向きへ1歩ずつ動かす。結果を ',' でつなぐ（さわっただけで出た・はがれたときは '(exit)' のように括弧で先に置く）。
+  // 出た・はがれたら、そこで止める
   const go = (sim, key, dirs) => {
     sim.beginDrag(at(sim, key).id);
-    const got = [...dirs].map((ch) => sim.step(DIRS.indexOf(ch)));
+    const got = sim.auto ? ['(' + sim.auto + ')'] : [];
+    for (const ch of dirs) {
+      if (sim.dragging < 0) break;
+      got.push(sim.step(DIRS.indexOf(ch)));
+    }
     sim.endDrag();
     return got.join(',');
   };
@@ -623,58 +674,77 @@ function main() {
       const got = [go(sim, 'a', 'R'), go(sim, 'a', 'D'), go(sim, 'a', 'U'), go(sim, 'a', 'L'), go(sim, 'b', 'L'), go(sim, 'b', 'UU')].join(' / ');
       return [got === 'move / blocked / edge / move / edge / move,blocked' && at(sim, 'a').c === 0 && at(sim, 'b').r === 1, got];
     }],
-    ['同じ色の出口に面していれば、ふちから外へ出て盤から消え、出たマスは空く', () => {
-      const sim = make(['##R##', '#.a.#', '#.b.#', '#####'], { a: 'R', b: 'B' });
-      const k = go(sim, 'a', 'U');
-      const k2 = go(sim, 'b', 'U');
-      return [k === 'exit' && at(sim, 'a').out && k2 === 'move' && sim.blockAt(0, 1) === at(sim, 'b').id, k + ' ' + k2];
+    ['動かして同じ色の出口の前に来たら、押し出さなくてもその場で外へ出て盤から消え、出たマスは空く', () => {
+      const sim = make(['###R##', '#a...#', '#.b..#', '######'], { a: 'R', b: 'B' });
+      const k = go(sim, 'a', 'RRR');
+      const k2 = go(sim, 'b', 'UR');
+      return [k === 'move,move+exit' && at(sim, 'a').out && sim.moves === 2 && k2 === 'move,move' && sim.blockAt(0, 2) === at(sim, 'b').id, k + ' / ' + k2 + ' 手数 ' + sim.moves];
     }],
-    ['色の違う出口からは出られない', () => {
+    ['出口の前にあるブロックは、さわるだけで出る（動かなくても1手と数える）', () => {
+      const sim = make(['##R##', '#.a.#', '#...#', '#####'], { a: 'R' });
+      const k = go(sim, 'a', 'D');
+      return [k === '(exit)' && at(sim, 'a').out && sim.moves === 1 && sim.state === 'clear', k + ' 手数 ' + sim.moves + ' ' + sim.state];
+    }],
+    ['色の違う出口からは出られず、前に来ても出ない', () => {
       const sim = make(['##R##', '#.b.#', '#...#', '#####'], { b: 'B' });
       const k = go(sim, 'b', 'U');
-      return [k === 'edge' && !at(sim, 'b').out, k];
+      const k2 = go(sim, 'b', 'LR');
+      return [k === 'edge' && k2 === 'move,move' && !at(sim, 'b').out, k + ' / ' + k2];
     }],
     ['出口より幅の広いブロック・出口からはみ出すブロックは出られない（出口の幅の中に収まれば出る）', () => {
       const a = make(['##R###', '#.aa.#', '#....#', '######'], { a: 'R' });
       const k1 = go(a, 'a', 'U');
       const b = make(['##RR##', '#aa..#', '#....#', '######'], { a: 'R' });
       const k2 = go(b, 'a', 'U');
-      const k3 = go(b, 'a', 'RU');
-      return [k1 === 'edge' && k2 === 'edge' && k3 === 'move,exit', k1 + ' / ' + k2 + ' / ' + k3];
+      const k3 = go(b, 'a', 'R');
+      return [k1 === 'edge' && k2 === 'edge' && k3 === 'move+exit', k1 + ' / ' + k2 + ' / ' + k3];
     }],
-    ['L 字のブロックは、出る向きに見て、どの列もブロックの先から盤のふちまで空いていないと出られない', () => {
-      const a = make(['##RR##', '#.ca.#', '#.aa.#', '#....#', '######'], { a: 'R', c: 'B' });
-      const k1 = go(a, 'a', 'U');
-      const b = make(['##RR##', '#..a.#', '#.aa.#', '#....#', '######'], { a: 'R' });
-      const k2 = go(b, 'a', 'U');
-      return [k1 === 'edge' && k2 === 'exit', k1 + ' / ' + k2];
+    ['L 字のブロックは、出る向きに見て、どの列もブロックの先から盤のふちまで空いていないと出られない（空けば、さわるだけで出る）', () => {
+      const sim = make(['##RR##', '#.ca.#', '#.aa.#', '#....#', '######'], { a: 'R', c: 'B' });
+      const k1 = go(sim, 'a', 'U');
+      const kc = go(sim, 'c', 'L');
+      const k2 = go(sim, 'a', '');
+      return [k1 === 'edge' && kc === 'move' && k2 === '(exit)', k1 + ' / ' + kc + ' / ' + k2];
     }],
-    ['2色のブロックは、外側の色の出口で外側がはがれてその場に残り、内側の色の出口から出る（はがれる前は内側の色の出口を通れない）', () => {
-      const sim = make(['##R##', '#.a.B', '#...#', '#####'], { a: 'RB' });
-      const k1 = go(sim, 'a', 'RR');
-      const k2 = go(sim, 'a', 'LU');
+    ['動かしている途中で同じ色の出口の前を通ると、そこで出る（その先へは進まない）', () => {
+      const sim = make(['##R###', '#a...#', '#....#', '######'], { a: 'R' });
+      sim.beginDrag(0);
+      const out = sim.follow(0, 3).join(',');
+      sim.endDrag();
+      return [out === 'move+exit' && at(sim, 'a').out && sim.moves === 1, out + ' 手数 ' + sim.moves];
+    }],
+    ['2色のブロックは、外側の色の出口の前で外側がはがれてその場に残り、内側の色の出口の前で出る（はがれる前は内側の色の出口の前に来ても出ない）', () => {
+      const sim = make(['##R##', '#...B', '#a..#', '#...#', '#####'], { a: 'RB' });
+      const k1 = go(sim, 'a', 'RRUR');
+      const k2 = go(sim, 'a', 'L');
       const a = at(sim, 'a');
       const peeled = a.r + ',' + a.c + ' 層 ' + a.layer + ' 色 ' + sim.color(a.id);
       const k3 = go(sim, 'a', 'U');
-      const k4 = go(sim, 'a', 'RR');
-      return [k1 === 'move,edge' && k2 === 'move,peel' && peeled === '0,1 層 1 色 B' && k3 === 'edge' && k4 === 'move,exit' && sim.state === 'clear',
+      const k4 = go(sim, 'a', 'R');
+      return [k1 === 'move,move,move,edge' && k2 === 'move+peel' && peeled === '0,1 層 1 色 B' && k3 === 'edge' && k4 === 'move+exit' && sim.state === 'clear',
         [k1, k2, peeled, k3, k4].join(' / ')];
     }],
-    ['全部のブロックが出たらクリア。手数は、つかんで動いた回数（動かなかったつかみは数えない）', () => {
-      const sim = make(['##R##', '#.a.#', '#.b.#', '##B##'], { a: 'R', b: 'B' });
-      go(sim, 'b', 'U'); // a にふさがれて動かない（数えない）
-      go(sim, 'a', 'L');
+    ['2色のブロックが、外側の色と内側の色の出口の両方の前（角）に来ると、はがれてそのまま出る（1手）', () => {
+      const sim = make(['#R##', 'B..#', '#a.#', '####'], { a: 'RB' });
+      const k = go(sim, 'a', 'U');
+      return [k === 'move+peel+exit' && sim.state === 'clear' && sim.moves === 1, k + ' 手数 ' + sim.moves + ' ' + sim.state];
+    }],
+    ['全部のブロックが出たらクリア。手数は、つかんで動いた回数（出口の前で出たのも同じ1手。動かなかったつかみは数えない）', () => {
+      const sim = make(['##R##', '#.b.#', '#.a.#', '##B##'], { a: 'R', b: 'B' });
+      const k0 = go(sim, 'a', 'U'); // b にふさがれて動かない（数えない）
+      go(sim, 'b', 'L');
       const m1 = sim.moves;
-      go(sim, 'a', 'RU');
-      go(sim, 'b', 'D');
-      return [m1 === 1 && sim.moves === 3 && sim.state === 'clear' && sim.left() === 0 && sim.events.some((e) => e.type === 'clear'), '途中 ' + m1 + ' 手 → ' + sim.moves + ' 手 ' + sim.state];
+      go(sim, 'a', 'U');
+      go(sim, 'b', 'RD');
+      return [k0 === 'blocked' && m1 === 1 && sim.moves === 3 && sim.state === 'clear' && sim.left() === 0 && sim.events.some((e) => e.type === 'clear'),
+        k0 + ' / 途中 ' + m1 + ' 手 → ' + sim.moves + ' 手 ' + sim.state];
     }],
     ['クリアのあとは、つかめず動かない', () => {
       const sim = make(['##R##', '#.a.#', '#####'], { a: 'R' });
-      go(sim, 'a', 'U');
+      go(sim, 'a', '');
       return [sim.state === 'clear' && !sim.beginDrag(0) && sim.tryStep(0, 2) === null, sim.state];
     }],
-    ['指を追う動き: 0.5 マス未満は動かず、大きく動かすと何マスも進み、ふさがった向きは回りこみ、出口の外まで引くと出る', () => {
+    ['指を追う動き: 0.5 マス未満は動かず、大きく動かすと何マスも進み、ふさがった向きは回りこみ、出口の前まで来ると出る', () => {
       const sim = make(['#######', '#a....#', '#.#...#', '#.....R', '#######'], { a: 'R' });
       sim.beginDrag(0);
       const small = sim.follow(0.4, 0.45).join(',');
@@ -684,7 +754,7 @@ function main() {
       const pos2 = at(sim, 'a').r + ',' + at(sim, 'a').c;
       const out = sim.follow(2, 6).join(',');
       sim.endDrag();
-      return [small === '' && far === 'move,move,move' && pos1 === '0,3' && around === 'move,move' && pos2 === '2,3' && out === 'move,exit' && sim.moves === 1,
+      return [small === '' && far === 'move,move,move' && pos1 === '0,3' && around === 'move,move' && pos2 === '2,3' && out === 'move+exit' && sim.moves === 1,
         [small, far, pos1, around, pos2, out].join(' / ') + ' 手数 ' + sim.moves];
     }],
     ['指を追う動き: 斜めにあるとき、離れているほうの向きがふさがっていれば、もう片方の向きへ回りこむ', () => {

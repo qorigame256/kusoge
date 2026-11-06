@@ -5,11 +5,15 @@
 // 内側: . 空き／# 動かない石／小文字 ブロック（同じ文字のマスが1つのブロック。上下左右でつながった形）。
 // level.colors はブロックの文字 → 色の文字列。1文字ならその色。2文字なら2色のブロック（1文字目が外側、2文字目が内側。6面から）。
 // ブロックは上下左右に1マスずつ動き、壁・石・ほかのブロックには入れない。回らない。
-// 盤のふちから外へ出ようとしたとき（どれかのマスが盤の外へ出る1歩）、出る向きに見たブロックの幅の全部（縦に出るなら各列、
-// 横に出るなら各行）が、いまの色の出口に面していて、各列（各行）のブロックの先から盤のふちまでが空いていれば、外へ出て盤から消える。
-// 2色のブロックが外側の色の出口から出ようとすると、外側だけがはがれて内側の色のブロックになり、その場に残る（そこでつかむのが終わる）。
+// 出口の前: 盤のふちに触れていて、そこから外へ出る向きに見たブロックの幅の全部（縦に出るなら各列、横に出るなら各行）が、
+// いまの色の出口に面し、各列（各行）のブロックの先から盤のふちまでが空いている所（そこから1歩で外へ出られる所）。
+// つかんでいるブロックが出口の前に来たら、押し出さなくてもその場で外へ出て盤から消え、つかむのが終わる（2026-11-06 本人の指示。
+// 動いている途中で前を通ったときも出る。つかんだときにすでに前にあれば、さわるだけで出る。面の始めに前にあるブロックは、さわるまで出ない）。
+// 2色のブロックが外側の色の出口の前に来ると、外側だけがはがれて内側の色のブロックになり、その場に残る（そこでつかむのが終わる）。
+// はがれた所が内側の色の出口の前（角）なら、続けて外へ出る。出る・はがれるのは損にならない（出たブロックは道をあけるだけで、
+// 外側の色ではどこからも出られない）ので、自動にしても解けなくなる形はできない。
 // 全部のブロックが出ればクリア。失敗は無い（ブロックは動かした道を戻せ、出たブロックは道をあけるだけなので、解けなくなる形が無い）。
-// 手数は、指でつかんでからはなすまでにブロックが動いた（出た・はがれたを含む）回数。
+// 手数は、指でつかんでからはなすまでにブロックが動いた（出た・はがれたを含む。さわっただけで出たのも）回数。
 (function () {
   'use strict';
   const KG = (globalThis.KG = globalThis.KG || {});
@@ -91,6 +95,7 @@
       state: 'play', // 'play' | 'clear'（失敗は無い）
       dragging: -1, // つかんでいるブロックの番号（いなければ -1）
       dragMoved: false, // つかんでから動いたか（手数に数えるか）
+      auto: '', // 直前の beginDrag で、さわっただけで起きたこと（'' ・'exit'・'peel'・'peel+exit'）
       events: [], // 描画側が読んで空にする（音や演出のきっかけ）
       color,
       blockAt,
@@ -173,36 +178,34 @@
       return blocked ? 'blocked' : 'move';
     }
 
-    function beginDrag(id) {
-      if (sim.state !== 'play' || !blocks[id] || blocks[id].out) return false;
-      endDrag();
-      sim.dragging = id;
-      sim.dragMoved = false;
-      return true;
+    // ブロック id が出口の前にあれば、外へ出る（2色のブロックの外側の色なら、はがれる）向き。無ければ -1。
+    // first の向きを先に調べる（動いてきた向きへ出るほうが、見た目が動きに合う）
+    function leaveDir(id, first) {
+      const order = first >= 0 ? [first, 0, 1, 2, 3] : [0, 1, 2, 3];
+      for (const d of order) {
+        const k = tryStep(id, d);
+        if (k === 'exit' || k === 'peel') return d;
+      }
+      return -1;
     }
 
-    // つかんでいるブロックを向き d へ1歩動かす。結果は tryStep と同じ（'move'・'exit'・'peel' のときだけ動く）。
-    // 出たとき・はがれたときは、そこでつかむのが終わる
-    function step(d) {
-      const id = sim.dragging;
-      const k = id < 0 ? null : tryStep(id, d);
-      if (k !== 'move' && k !== 'exit' && k !== 'peel') return k;
+    // つかんでいるブロック id を向き d へ外へ出す（k が 'peel' なら外側をはがす。はがれた所が内側の色の出口の前なら、続けて出す）。
+    // 起きたことを '+' でつないで返す（'exit'・'peel'・'peel+exit'）。どれのあとも、つかむのが終わる
+    function leave(id, d, k) {
       const b = blocks[id];
       sim.dragMoved = true;
-      if (k === 'move') {
-        for (const [dr, dc] of b.cells) occ[(b.r + dr) * W + b.c + dc] = -1;
-        b.r += DR[d];
-        b.c += DC[d];
-        for (const [dr, dc] of b.cells) occ[(b.r + dr) * W + b.c + dc] = id;
-        sim.events.push({ type: 'move', id, d });
-        return k;
-      }
+      let done = k;
       if (k === 'peel') {
         const from = b.colors[0];
         b.layer = 1;
         sim.events.push({ type: 'peel', id, d, from, to: b.colors[1] });
-        endDrag();
-        return k;
+        const d2 = leaveDir(id, -1);
+        if (d2 < 0) {
+          endDrag();
+          return done;
+        }
+        d = d2;
+        done = 'peel+exit';
       }
       for (const [dr, dc] of b.cells) occ[(b.r + dr) * W + b.c + dc] = -1;
       b.out = true;
@@ -212,7 +215,38 @@
         sim.state = 'clear';
         sim.events.push({ type: 'clear' });
       }
-      return k;
+      return done;
+    }
+
+    // ブロック id をつかむ。出口の前にあれば、さわっただけで出る（はがれる）ので、起きたことを sim.auto に残す
+    function beginDrag(id) {
+      if (sim.state !== 'play' || !blocks[id] || blocks[id].out) return false;
+      endDrag();
+      sim.dragging = id;
+      sim.dragMoved = false;
+      sim.auto = '';
+      const d = leaveDir(id, -1);
+      if (d >= 0) sim.auto = leave(id, d, tryStep(id, d));
+      return true;
+    }
+
+    // つかんでいるブロックを向き d へ1歩動かす。結果は tryStep と同じ文字。動いた先が出口の前なら、そのまま出る（はがれる）ので、
+    // 'move+exit'・'move+peel'・'move+peel+exit' と '+' でつないで返す。出たとき・はがれたときは、そこでつかむのが終わる
+    function step(d) {
+      const id = sim.dragging;
+      const k = id < 0 ? null : tryStep(id, d);
+      // 出口の前にいれば、つかんだとき・来たときに出ているので、押し出す1歩はふつう起きない（起きたら同じように出す）
+      if (k === 'exit' || k === 'peel') return leave(id, d, k);
+      if (k !== 'move') return k;
+      const b = blocks[id];
+      sim.dragMoved = true;
+      for (const [dr, dc] of b.cells) occ[(b.r + dr) * W + b.c + dc] = -1;
+      b.r += DR[d];
+      b.c += DC[d];
+      for (const [dr, dc] of b.cells) occ[(b.r + dr) * W + b.c + dc] = id;
+      sim.events.push({ type: 'move', id, d });
+      const d2 = leaveDir(id, d);
+      return d2 < 0 ? k : k + '+' + leave(id, d2, tryStep(id, d2));
     }
 
     // 指をはなした（つかんでから動いていれば手数に数える）
@@ -224,7 +258,8 @@
 
     // つかんでいるブロックを、左上が (tr, tc)（マスの単位。小数でよい）に近づくよう1歩ずつ動かす。指の動きに合わせて呼ぶ。
     // 離れているほうの向き（縦か横）を先に試し、ふさがっていればもう片方を試す（角を回りこめるように）。
-    // 0.5 マス以上離れている向きにだけ動く。動いた結果を順に並べて返す（最後が 'edge'・'blocked' なら、そこで止まった）
+    // 0.5 マス以上離れている向きにだけ動く。動いた結果を順に並べて返す（最後が 'edge'・'blocked' なら、そこで止まった。
+    // 'move+exit' のように出た・はがれたなら、そこでつかむのが終わっている）
     function follow(tr, tc) {
       const out = [];
       for (let n = 0; n < 60 && sim.dragging >= 0; n++) {
@@ -244,7 +279,7 @@
             moved = true;
             break;
           }
-          if (k === 'exit' || k === 'peel') {
+          if (sim.dragging < 0) {
             out.push(k);
             return out;
           }

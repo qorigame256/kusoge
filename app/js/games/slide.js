@@ -432,6 +432,7 @@
       const b = sim.blocks[id];
       drag = { id, ox: x - (L.left + b.c * L.C), oy: y - (L.top + b.r * L.C), denied: false };
       api.sound('tap');
+      flush(); // 出口の前にあったブロックは、さわっただけで出る（はがれる）。そのときは handle が drag を消す
     }
 
     function pointerMove(x, y) {
