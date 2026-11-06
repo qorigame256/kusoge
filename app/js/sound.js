@@ -9,7 +9,7 @@
   let muted = false;
   const lastPlayed = {};
   // 同じ音が短い間に重なりすぎないようにする間隔（秒）
-  const MIN_GAP = { coin: 0.045, sizzle: 0.2, pin: 0.05, hit: 0.07, buzz: 0.18, honk: 0.2, dig: 0.07, ball: 0.05 };
+  const MIN_GAP = { coin: 0.045, sizzle: 0.2, pin: 0.05, hit: 0.07, buzz: 0.18, honk: 0.2, dig: 0.07, ball: 0.05, slide: 0.045 };
 
   function getCtx() {
     if (!ac) {
@@ -171,6 +171,22 @@
           // 氷が割れる: ぱりんという音
           noise(a, t, 0.12, 0.2, 7000);
           [2600, 3300].forEach((f, i) => tone(a, f, t + i * 0.04, 0.06, 'triangle', 0.04));
+          break;
+        case 'slide':
+          // ブロックが1マス滑る: こつっという小さな音
+          tone(a, 330, t, 0.04, 'triangle', 0.05, 260);
+          noise(a, t, 0.03, 0.04, 1500);
+          break;
+        case 'out':
+          // ブロックが出口から出る: しゅっと抜ける音と、ちりんという音
+          noise(a, t, 0.22, 0.12, 2600);
+          tone(a, 520, t, 0.16, 'triangle', 0.06, 1250);
+          tone(a, 1568, t + 0.1, 0.14, 'triangle', 0.05);
+          break;
+        case 'peel':
+          // 2色のブロックの外側がはがれる: ぺりっという音
+          noise(a, t, 0.12, 0.14, 5200);
+          tone(a, 980, t, 0.1, 'square', 0.035, 640);
           break;
         case 'clear':
           [523, 659, 784, 1047].forEach((f, i) => tone(a, f, t + i * 0.09, 0.2, 'triangle', 0.14));

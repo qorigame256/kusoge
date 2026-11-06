@@ -1,8 +1,8 @@
 // 画面の切り替え（ゲーム一覧 → レベル選択 → 遊ぶ画面 → 結果）と、ゲームを動かす時計・タップの受け渡し。
 // 各ゲームは KG.registerGame で次の形を登録する:
 //   { id, title, cardTitle?, desc, levels: [{ name }], drawIcon(ctx), create(api, levelIndex) → { step(), render(ctx), pointerDown(x, y), pointerMove?(x, y), pointerUp?(x, y) } }
-//   cardTitle は一覧の札の題名を、行を変えてよい所で区切った配列（例: ['線を引いて', '守る']）。札は1行に全角6字までしか入らないので、
-//   7字以上の題名に付ける（無ければ title をそのまま出す。区切りの中では行を変えない）。
+//   cardTitle は一覧の札の題名を、行を変えてよい所で区切った配列（例: ['砂を掘って', '玉を運ぶ']）。札は1行に全角7字までしか入らないので、
+//   8字以上の題名には付ける（無ければ title をそのまま出す。区切りの中では行を変えない。7字以下の題名に付けても、入りきれば1行で出る）。
 //   step() は 1/60 秒ぶん進める。render(ctx) は論理座標（KG.W × KG.H）で描く。タップの座標も論理座標。
 //   pointerMove・pointerUp はなぞる操作をするゲームだけが持つ（指を画面の外へ出しても追えるよう、押した指を canvas が捕まえる）。
 //   渡すのは最初に触れた指だけで、その指を離すまでほかの指は渡さない（下の「操作」）。
@@ -74,7 +74,7 @@
 
   function drawIconInto(cv, game) {
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const px = Math.max(1, Math.round(84 * scale * dpr)); // 一覧の絵の表示の大きさ（style.css の .game-card .icon）
+    const px = Math.max(1, Math.round(72 * scale * dpr)); // 一覧の絵の表示の大きさ（style.css の .game-card .icon）
     cv.width = px;
     cv.height = px;
     const c = cv.getContext('2d');

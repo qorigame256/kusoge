@@ -88,7 +88,7 @@ button {
 }
 
 /* 3列に並べる（2026-11-05 本人決定。説明文はレベル選択の画面に出す）。画面はスクロールしない。
-   札の題名は1行に全角6字まで（それより長い題名は、ゲームの cardTitle の区切りで行を変える。main.js の冒頭）。
+   札の題名は1行に全角7字まで（それより長い題名は、ゲームの cardTitle の区切りで行を変える。main.js の冒頭）。
    測った値は CLAUDE.md の「Claude が決めた作り」の一覧の項。iPhone の文字では測っていない */
 .game-list {
   position: absolute;
@@ -113,11 +113,12 @@ button {
   background: var(--panel);
 }
 
-/* 84 は main.js の drawIconInto にもある。変えるときは両方を揃える */
+/* 72 は main.js の drawIconInto にもある。変えるときは両方を揃える。
+   10本で4段になったので、9本（3段）のときの 84 から1割5分ほど小さくした（2026-11-05 の ⑨ の問2で本人に伝えたとおり） */
 .game-card .icon {
   flex: none;
-  width: calc(84 * var(--u));
-  height: calc(84 * var(--u));
+  width: calc(72 * var(--u));
+  height: calc(72 * var(--u));
   border-radius: calc(14 * var(--u));
   background: #171a33;
 }
@@ -144,7 +145,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: calc(20 * var(--u));
+  font-size: calc(17 * var(--u));
   line-height: 1.25;
   font-weight: 800;
   word-break: keep-all;
