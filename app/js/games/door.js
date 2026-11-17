@@ -286,6 +286,7 @@
     let outcome = null; // いまの拍の結果（sim.beat の返り値）
     let crashF = 1; // ぶつかった拍で、ぶつかった2つが触れる割合（0〜1）
     let crashAt = null; // ぶつかった所（画面の座標）
+    let crashHit = null; // ぶつかった組のうち、いちばん早く触れる組（絵が止まる所・赤い輪・説明をこの組でそろえる）
     let denied = false; // 描いていて止まったときに音を出したか
     const lit = sim.people.map(() => 0); // 扉の明かり
     const fx = []; // 演出 { kind: 'enter' | 'bump', x, y, col, t }
@@ -306,9 +307,11 @@
       return lerp(center(m.from), center(m.to), f);
     }
 
-    // ぶつかった拍で、ぶつかった2つが触れる割合（いちばん早く触れる組）
+    // ぶつかった拍で、ぶつかった2つが触れる割合と、その組（いちばん早く触れる組）。{ f, hit }
+    // 同じ拍に2組がぶつかることがある。絵は早い組の所で止まるので、赤い輪と説明も同じ組にする
     function touchF(crash) {
       let best = 1;
+      let hit = crash.hits[0];
       for (const h of crash.hits) {
         const ra = h.a.kind === 'robot' ? ROBOT : BODY;
         const rb = h.b.kind === 'robot' ? ROBOT : BODY;
@@ -317,12 +320,15 @@
           const p = moverAt(h.a, f);
           const q = moverAt(h.b, f);
           if (Math.hypot(p[0] - q[0], p[1] - q[1]) <= lim) {
-            best = Math.min(best, f);
+            if (f < best) {
+              best = f;
+              hit = h;
+            }
             break;
           }
         }
       }
-      return best;
+      return { f: best, hit };
     }
 
     function nameOf(m) {
@@ -330,7 +336,7 @@
     }
 
     function crashMessage(crash) {
-      const h = crash.hits[0];
+      const h = crashHit || crash.hits[0];
       const a = h.a.kind === 'robot' ? h.b : h.a;
       const b = h.a.kind === 'robot' ? h.a : h.b;
       if (b.kind === 'robot') return crash.t + '歩目に、' + nameOf(a) + 'がロボットにぶつかった';
@@ -350,8 +356,10 @@
       outcome = sim.beat();
       frame = 0;
       if (outcome === 'fail') {
-        crashF = touchF(sim.crash);
-        const h = sim.crash.hits[0];
+        const touch = touchF(sim.crash);
+        crashF = touch.f;
+        crashHit = touch.hit;
+        const h = crashHit;
         const p = moverAt(h.a, crashF);
         const q = moverAt(h.b, crashF);
         crashAt = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
